@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#28724f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="자산 보드" />
+    <title>자산 보드</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <section id="loginScene" class="login-scene">
+      <form id="loginForm" class="login-card">
+        <div>
+          <span class="login-mark">₩</span>
+          <h1>자산 보드 로그인</h1>
+          <p id="loginHint">전화번호와 비밀번호를 입력해 주세요.</p>
+        </div>
+        <label>
+          전화번호
+          <input name="phone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+        </label>
+        <label>
+          비밀번호
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <label id="inviteCodeField" hidden>
+          초대 코드
+          <input name="inviteCode" type="text" autocomplete="off" placeholder="초대받은 경우만 입력" />
+        </label>
+        <button type="submit" class="primary-button">로그인</button>
+        <div class="login-helper-actions">
+          <button id="showInviteCodeButton" type="button" class="login-reset-button">초대 코드 입력</button>
+          <button id="forgotPasswordButton" type="button" class="login-reset-button">비밀번호 찾기</button>
+        </div>
+      </form>
+    </section>
+
+    <div id="appShell" class="app-shell" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <label class="brand-mark profile-image-control" title="프로필 이미지 변경">
+            <img id="profileImagePreview" alt="" hidden />
+            <span id="profileImageInitial">₩</span>
+            <span class="image-edit-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.2-1.5h4.6L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Zm8 8a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm0-1.8a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z" />
+              </svg>
+            </span>
+            <input id="profileImageInput" class="visually-hidden-input" type="file" accept="image/*" />
+          </label>
+          <div>
+            <strong>자산 보드</strong>
+            <span>가계부 · 저축 · 배당</span>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="주요 화면">
+          <button class="nav-item active" data-view="dashboard">월 요약</button>
+          <button class="nav-item" data-view="transactions">거래 내역</button>
+          <button class="nav-item" data-view="investments">투자/배당</button>
+          <button class="nav-item" data-view="insights">기록 회고</button>
+          <button class="nav-item" data-view="settings">시스템 설정</button>
+        </nav>
+        <div class="storage-panel">
+          <span>저장 방식</span>
+          <strong>브라우저 로컬 저장</strong>
+          <button id="resetData" class="ghost-button">샘플로 초기화</button>
+          <button id="logoutButton" class="ghost-button" type="button">로그아웃</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">2025년 10월 기준</p>
+            <h1 id="mainTitle">민석님의 월간 자산 흐름</h1>
+          </div>
+          <div class="month-control" aria-label="월 선택">
+            <button id="prevMonth" title="이전 달">‹</button>
+            <strong id="currentMonthLabel"></strong>
+            <button id="nextMonth" title="다음 달">›</button>
+          </div>
+        </header>
+
+        <section id="dashboardView" class="view active-view">
+          <div class="metric-grid">
+            <button class="metric-card" type="button" data-metric-type="income">
+              <span>수입</span>
+              <strong id="incomeTotal"></strong>
+            </button>
+            <button class="metric-card" type="button" data-metric-type="expense">
+              <span>지출</span>
+              <strong id="expenseTotal"></strong>
+            </button>
+            <button class="metric-card" type="button" data-metric-type="saving">
+              <span>저축/투자</span>
+              <strong id="savingTotal"></strong>
+            </button>
+            <button class="metric-card emphasis" type="button" data-metric-type="all">
+              <span>가용 잔액</span>
+              <strong id="availableBalance"></strong>
+            </button>
+          </div>
+
+          <section id="dashboardGoalsPanel" class="panel active-goals-panel" hidden>
+            <div class="panel-heading">
+              <div>
+                <h2>이번 달 설정 목표</h2>
+                <span id="dashboardGoalsHint">추천 목표 진행률을 확인합니다.</span>
+              </div>
+            </div>
+            <div id="dashboardGoalProgress" class="goal-progress-list"></div>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="panel wide-panel">
+              <div class="panel-heading">
+                <h2>카테고리별 지출</h2>
+                <span id="monthDelta"></span>
+              </div>
+              <div id="categoryBars" class="bar-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>결제/이체 통계</h2>
+                <span>월 기준</span>
+              </div>
+              <div id="paymentStats" class="bar-list"></div>
+            </section>
+
+            <section id="authorStatsPanel" class="panel" hidden>
+              <div class="panel-heading">
+                <h2>작성자별 지출</h2>
+                <span>가족 기준</span>
+              </div>
+              <div id="authorStats" class="bar-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>최근 거래</h2>
+                <button class="text-button" data-view-jump="transactions">전체 보기</button>
+              </div>
+              <div id="recentTransactions" class="compact-list"></div>
+            </section>
+
+            <section class="panel wide-panel">
+              <div class="panel-heading">
+                <h2>월 요약 보드의 투자 항목</h2>
+                <span>티커 기준 연동</span>
+              </div>
+              <div id="linkedInvestments" class="investment-strip"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="transactionsView" class="view">
+          <div class="work-grid">
+            <form id="transactionForm" class="panel form-panel">
+              <h2 id="transactionFormTitle">거래 추가</h2>
+              <label>
+                날짜
+                <input name="date" type="date" required />
+              </label>
+              <label>
+                유형
+                <select name="type" required>
+                  <option value="income">수입</option>
+                  <option value="expense">지출</option>
+                  <option value="saving">저축/투자</option>
+                </select>
+              </label>
+              <label id="authorField" hidden>
+                작성자
+                <select id="authorSelect" name="author" required></select>
+              </label>
+              <label>
+                카테고리
+                <select id="categorySelect" name="category" required></select>
+                <input id="customCategoryInput" name="customCategory" type="text" placeholder="새 카테고리 입력" hidden />
+              </label>
+              <label>
+                금액
+                <input name="amount" type="number" min="1" step="1" placeholder="50000" required />
+              </label>
+              <label>
+                결제/이체 수단
+                <select id="paymentMethodSelect" name="paymentMethod" required></select>
+              </label>
+              <label>
+                카드/은행/증권사
+                <select id="paymentAccountSelect" name="paymentAccount"></select>
+                <input id="customPaymentAccountInput" name="customPaymentAccount" type="text" placeholder="새 카드/은행/증권사명 입력" hidden />
+              </label>
+              <label>
+                메모
+                <input name="memo" type="text" placeholder="선택 입력" />
+              </label>
+              <button id="transactionSubmitButton" type="submit" class="primary-button">추가</button>
+              <div id="transactionEditActions" class="form-actions" hidden>
+                <button id="cancelTransactionEdit" type="button" class="secondary-button">취소</button>
+                <button id="deleteEditingTransaction" type="button" class="danger-button">삭제</button>
+              </div>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>월 거래 내역</h2>
+                  <span id="transactionListHint">항목을 선택하면 아래 목록에 거래 내역이 표시됩니다.</span>
+                </div>
+                <div class="transaction-heading-actions">
+                  <div class="transaction-view-controls" aria-label="거래 보기 방식">
+                    <button type="button" data-transaction-view-mode="list">목록</button>
+                    <button type="button" data-transaction-view-mode="calendar">달력</button>
+                  </div>
+                  <span id="transactionCount"></span>
+                </div>
+              </div>
+              <div id="categoryFilters" class="table-list monthly-transaction-list"></div>
+            </section>
+
+          <section class="panel transaction-calendar-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>월 거래 달력</h2>
+                <span id="transactionCalendarHint">날짜별 수입, 지출, 저축/투자 내역을 한눈에 보여줍니다.</span>
+              </div>
+              <div class="transaction-heading-actions">
+                <div class="transaction-view-controls" aria-label="거래 보기 방식">
+                  <button type="button" data-transaction-view-mode="list">목록</button>
+                  <button type="button" data-transaction-view-mode="calendar">달력</button>
+                </div>
+                <span id="transactionCalendarCount"></span>
+              </div>
+            </div>
+            <div class="transaction-calendar-scroll">
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>일</span>
+                <span>월</span>
+                <span>화</span>
+                <span>수</span>
+                <span>목</span>
+                <span>금</span>
+                <span>토</span>
+              </div>
+              <div id="transactionCalendar" class="transaction-calendar"></div>
+            </div>
+            <div id="calendarDayDetails" class="calendar-day-details"></div>
+          </section>
+          </div>
+
+          <section class="panel excel-import-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>엑셀 일괄 등록</h2>
+                <span>샘플 양식에 맞춰 작성한 거래 내역을 한 번에 등록합니다.</span>
+              </div>
+              <div class="excel-sample-actions">
+                <a class="text-button download-link" href="/api/transactions/sample.xlsx" download="거래내역_업로드_샘플.xlsx">샘플 엑셀 다운로드</a>
+                <button id="createTransactionSampleFile" class="secondary-button" type="button">PC에 샘플 파일 생성</button>
+              </div>
+            </div>
+            <div class="excel-import-controls">
+              <label>
+                엑셀 파일
+                <input id="transactionExcelInput" type="file" accept=".xlsx,.xls" />
+              </label>
+              <button id="importTransactionExcel" class="secondary-button" type="button">업로드 등록</button>
+            </div>
+            <p id="excelImportStatus" class="excel-import-status">날짜, 유형, 카테고리, 금액은 필수입니다.</p>
+          </section>
+
+          <section class="panel registered-history-panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="detailHistoryTitle">상세 거래 내역</h2>
+                <span id="registeredHistoryHint">전체 거래를 항목별로 분류해서 보여줍니다.</span>
+              </div>
+              <span id="registeredHistoryCount"></span>
+            </div>
+            <div id="registeredHistory" class="categorized-history"></div>
+          </section>
+        </section>
+
+        <section id="investmentsView" class="view">
+          <div class="work-grid">
+            <form id="securityForm" class="panel form-panel">
+              <h2>증권 추가</h2>
+              <label>
+                티커
+                <input name="ticker" type="text" placeholder="TSLY" required />
+              </label>
+              <label>
+                종목명
+                <input name="name" type="text" placeholder="YieldMax TSLA" required />
+              </label>
+              <label>
+                수량
+                <input name="qty" type="number" min="0" step="0.001" required />
+              </label>
+              <label>
+                평단가
+                <input name="avgCost" type="number" min="0" step="0.01" required />
+              </label>
+              <label>
+                예상 월 배당
+                <input name="monthlyDividend" type="number" min="0" step="0.01" required />
+              </label>
+              <button type="submit" class="primary-button">저장</button>
+            </form>
+
+            <section class="panel table-panel">
+              <div class="panel-heading">
+                <h2>배당주 회수율</h2>
+                <span>연 기준</span>
+              </div>
+              <div id="securityTable" class="table-list"></div>
+            </section>
+          </div>
+
+          <section class="panel registered-history-panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="securityDetailTitle">상세 배당 내역</h2>
+                <span id="securityDetailHint">전체 종목의 배당과 원금 정보를 보여줍니다.</span>
+              </div>
+              <span id="securityDetailCount"></span>
+            </div>
+            <div class="security-tabs" aria-label="배당 정보 탭">
+              <button class="security-tab active" type="button" data-security-tab="details">배당 상세</button>
+              <button class="security-tab" type="button" data-security-tab="announcements">배당 발표</button>
+              <button class="security-tab" type="button" data-security-tab="projections">예상 배당</button>
+            </div>
+            <div id="securityDetailList" class="security-detail-list"></div>
+          </section>
+        </section>
+
+        <section id="insightsView" class="view">
+          <div class="insight-layout">
+            <article class="insight-card">
+              <span>누적 저축</span>
+              <strong id="lifetimeSavings"></strong>
+              <p id="savingsInsightText">민석님은 지금까지 이만큼 저축/투자했어요.</p>
+            </article>
+            <article class="insight-card">
+              <span>누적 식비</span>
+              <strong id="lifetimeFood"></strong>
+              <p>식비는 월별 흐름을 가장 먼저 비교해볼 만한 항목이에요.</p>
+            </article>
+            <article class="insight-card">
+              <span>배당 예상</span>
+              <strong id="annualDividend"></strong>
+              <p>현재 입력된 종목 기준 연 예상 배당입니다.</p>
+            </article>
+            <article class="badge-panel">
+              <h2>뱃지</h2>
+              <div id="badges" class="badge-list"></div>
+            </article>
+          </div>
+
+          <div class="review-layout">
+            <section class="panel review-panel wide-review-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>이번 달 자산 흐름</h2>
+                  <span id="reviewMonthLabel"></span>
+                </div>
+              </div>
+              <div id="reviewSummaryMetrics" class="review-metric-grid"></div>
+            </section>
+
+            <section id="insightGoalsPanel" class="panel review-panel wide-review-panel" hidden>
+              <div class="panel-heading">
+                <div>
+                  <h2>설정된 목표 진행률</h2>
+                  <span id="insightGoalsHint">이 달에 적용 중인 목표를 추적합니다.</span>
+                </div>
+              </div>
+              <div id="insightGoalProgress" class="goal-progress-list"></div>
+            </section>
+
+            <section class="panel review-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>지출 진단</h2>
+                  <span>카테고리와 결제수단 기준으로 봅니다.</span>
+                </div>
+              </div>
+              <div id="categoryDiagnosis" class="review-list"></div>
+            </section>
+
+            <section class="panel review-panel risk-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>위험 신호</h2>
+                  <span>관리하면 좋은 지점을 표시합니다.</span>
+                </div>
+              </div>
+              <div id="riskSignals" class="review-list"></div>
+            </section>
+
+            <section class="panel review-panel wide-review-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>추천 액션</h2>
+                  <span>다음 행동으로 옮기기 쉬운 제안만 보여줍니다.</span>
+                </div>
+              </div>
+              <div id="recommendationList" class="recommendation-list"></div>
+            </section>
+
+            <section class="panel review-panel wide-review-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>다음 달 추천 목표</h2>
+                  <span>현재 흐름을 기준으로 잡아볼 만한 목표입니다.</span>
+                </div>
+              </div>
+              <div id="nextGoals" class="goal-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="settingsView" class="view">
+          <div class="settings-layout">
+            <section class="panel settings-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>프로필</h2>
+                  <span>화면에 표시될 이름과 이미지를 설정합니다.</span>
+                </div>
+              </div>
+              <div class="settings-profile-row">
+                <label class="brand-mark profile-image-control settings-profile-image" title="프로필 이미지 변경">
+                  <img id="settingsProfileImagePreview" alt="" hidden />
+                  <span id="settingsProfileImageInitial">₩</span>
+                  <span class="image-edit-badge" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.2-1.5h4.6L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Zm8 8a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm0-1.8a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z" />
+                    </svg>
+                  </span>
+                  <input id="profileImageInput" class="visually-hidden-input" type="file" accept="image/*" />
+                </label>
+                <label>
+                  내 이름
+                  <input id="profileNameInput" type="text" maxlength="20" placeholder="이름 입력" />
+                </label>
+              </div>
+            </section>
+
+            <section class="panel settings-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>함께 쓰는 사람</h2>
+                  <span>가족이나 배우자를 작성자로 추가해서 거래별로 구분합니다.</span>
+                </div>
+              </div>
+              <form id="memberForm" class="account-form">
+                <label>
+                  작성자 이름
+                  <input name="memberName" type="text" maxlength="20" placeholder="예: 남편, 아내, 가족" required />
+                </label>
+                <button type="submit" class="primary-button">작성자 추가</button>
+                <p id="memberSettingsStatus" class="form-status" aria-live="polite"></p>
+              </form>
+              <div id="memberList" class="member-list"></div>
+              <div class="invite-box">
+                <div>
+                  <strong>신규 작성자 초대</strong>
+                  <span>초대받은 사람은 로그인할 때 초대 코드를 입력하면 같은 가계부에 참여합니다.</span>
+                </div>
+                <button id="createInviteCode" type="button" class="secondary-button">초대 코드 만들기</button>
+                <p id="inviteCodeResult" class="invite-code-result" aria-live="polite"></p>
+              </div>
+            </section>
+
+            <section class="panel settings-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>계정 설정</h2>
+                  <span>로그인에 사용하는 전화번호를 변경합니다.</span>
+                </div>
+              </div>
+              <div class="account-summary">
+                <span>현재 전화번호</span>
+                <strong id="currentPhoneLabel"></strong>
+              </div>
+              <form id="phoneChangeForm" class="account-form">
+                <label>
+                  새 전화번호
+                  <input name="newPhone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+                </label>
+                <label>
+                  현재 비밀번호
+                  <input name="currentPassword" type="password" autocomplete="current-password" required />
+                </label>
+                <button type="submit" class="primary-button">전화번호 변경</button>
+                <p id="accountSettingsStatus" class="form-status" aria-live="polite"></p>
+              </form>
+            </section>
+
+            <section class="panel settings-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>디자인 테마</h2>
+                  <span>원하는 색상으로 화면 분위기를 바꿉니다.</span>
+                </div>
+              </div>
+              <label>
+                테마 색상
+                <input id="themeColorInput" type="color" value="#28724f" />
+              </label>
+              <div class="theme-swatches" aria-label="테마 색상 빠른 선택">
+                <button type="button" data-theme-color="#28724f" style="--swatch-color: #28724f" title="그린"></button>
+                <button type="button" data-theme-color="#2f638f" style="--swatch-color: #2f638f" title="블루"></button>
+                <button type="button" data-theme-color="#6f4aa8" style="--swatch-color: #6f4aa8" title="퍼플"></button>
+                <button type="button" data-theme-color="#a13d35" style="--swatch-color: #a13d35" title="레드"></button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <aside id="bottomAdBanner" class="bottom-ad-banner" aria-label="광고">
+        <div class="ad-banner-inner">
+          <span class="ad-label">광고</span>
+          <div>
+            <strong>자산 관리에 필요한 금융 혜택을 확인해보세요</strong>
+            <p>광고 네트워크 승인 후 이 영역을 실제 배너로 교체할 수 있습니다.</p>
+          </div>
+          <span class="ad-action">스폰서</span>
+        </div>
+      </aside>
+    </div>
+
+    <div id="goalConfirmModal" class="modal-backdrop" hidden>
+      <section class="goal-modal" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
+        <div class="goal-modal-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+            <path d="m8.5 12.5 2.2 2.2 4.8-5.4" />
+          </svg>
+        </div>
+        <div>
+          <span class="modal-eyebrow">추천 목표 설정</span>
+          <h2 id="goalModalTitle">이 목표로 설정할까요?</h2>
+          <p id="goalModalDescription"></p>
+        </div>
+        <div class="goal-modal-preview">
+          <span id="goalModalLabel"></span>
+          <strong id="goalModalValue"></strong>
+          <small id="goalModalNote"></small>
+        </div>
+        <div class="modal-actions">
+          <button id="cancelGoalModal" type="button" class="secondary-button">취소</button>
+          <button id="confirmGoalModal" type="button" class="primary-button">목표로 설정</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="passwordResetModal" class="modal-backdrop" hidden>
+      <section class="goal-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="passwordResetTitle">
+        <div class="goal-modal-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+            <path d="M6 11h12v9H6z" />
+            <path d="M12 15v2" />
+          </svg>
+        </div>
+        <div>
+          <span class="modal-eyebrow">계정 확인</span>
+          <h2 id="passwordResetTitle">비밀번호 찾기</h2>
+          <p>등록된 전화번호를 입력하고 새 비밀번호를 설정해 주세요.</p>
+        </div>
+        <form id="passwordResetForm" class="account-form">
+          <label>
+            전화번호
+            <input name="phone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+          </label>
+          <label>
+            새 비밀번호
+            <input name="newPassword" type="password" autocomplete="new-password" required />
+          </label>
+          <label>
+            새 비밀번호 확인
+            <input name="confirmPassword" type="password" autocomplete="new-password" required />
+          </label>
+          <p id="passwordResetStatus" class="form-status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button id="cancelPasswordReset" type="button" class="secondary-button">취소</button>
+            <button type="submit" class="primary-button">비밀번호 변경</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <script src="./node_modules/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="./src/app.js"></script>
+    <script src="./src/pwa.js"></script>
+  </body>
+</html>

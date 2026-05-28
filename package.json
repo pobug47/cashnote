@@ -1,0 +1,16 @@
+{
+  "name": "personal-finance-board",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local personal finance, savings, investment, and dividend tracker.",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "pwa:icons": "node scripts/generate-pwa-icons.js",
+    "check": "node --check server.js && node --check src/app.js"
+  },
+  "dependencies": {
+    "pg": "^8.21.0",
+    "xlsx": "^0.18.5"
+  }
+}
