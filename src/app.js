@@ -2982,17 +2982,6 @@ function initForms() {
   });
   setTransactionFormMode();
 
-  document.querySelector("#createTransactionSampleFile").addEventListener("click", async () => {
-    try {
-      const response = await fetch("/api/transactions/create-sample");
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || result.error || "샘플 파일 생성 실패");
-      setExcelImportStatus(`샘플 엑셀을 PC에 생성했습니다: ${result.filePath}`, "success");
-    } catch (error) {
-      setExcelImportStatus(`샘플 파일을 생성하지 못했습니다. ${error.message}`, "error");
-    }
-  });
-
   document.querySelector("#importTransactionExcel").addEventListener("click", () => {
     const fileInput = document.querySelector("#transactionExcelInput");
     const file = fileInput.files?.[0];

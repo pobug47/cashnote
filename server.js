@@ -266,14 +266,6 @@ function buildTransactionSampleWorkbook() {
   return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
 }
 
-function writeTransactionSampleFile() {
-  const sampleDir = path.join(root, "downloads");
-  const samplePath = path.join(sampleDir, "거래내역_업로드_샘플.xlsx");
-  fs.mkdirSync(sampleDir, { recursive: true });
-  fs.writeFileSync(samplePath, buildTransactionSampleWorkbook());
-  return samplePath;
-}
-
 function stripHtml(html) {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -643,15 +635,6 @@ const server = http.createServer(async (req, res) => {
       "Content-Length": sampleBuffer.length
     });
     res.end(sampleBuffer);
-    return;
-  }
-
-  if (pathname === "/api/transactions/create-sample") {
-    try {
-      sendJson(res, 200, { filePath: writeTransactionSampleFile() });
-    } catch (error) {
-      sendJson(res, 500, { error: "Failed to create sample file", detail: error.message });
-    }
     return;
   }
 
