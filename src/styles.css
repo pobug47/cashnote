@@ -322,6 +322,18 @@ button {
   font-size: 13px;
 }
 
+.ad-live-slot {
+  display: block;
+  min-height: 58px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ad-live-slot .adsbygoogle {
+  width: 100%;
+  min-height: 58px;
+}
+
 .ad-action {
   display: inline-flex;
   align-items: center;

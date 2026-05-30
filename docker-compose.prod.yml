@@ -24,6 +24,9 @@ services:
       PORT: 5173
       DATABASE_URL: postgres://${POSTGRES_USER:-cashnote}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cashnote}
       DATABASE_SSL: "false"
+      AD_PROVIDER: ${AD_PROVIDER:-adsense}
+      ADSENSE_CLIENT: ${ADSENSE_CLIENT:-}
+      ADSENSE_BOTTOM_BANNER_SLOT: ${ADSENSE_BOTTOM_BANNER_SLOT:-}
 
   caddy:
     image: caddy:2-alpine

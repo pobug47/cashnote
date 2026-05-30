@@ -93,6 +93,7 @@ let appStarted = false;
 let pendingGoal = null;
 let pendingGoalAction = "set";
 let persistTimer = null;
+let adInitialized = false;
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
 const appViews = ["dashboard", "transactions", "investments", "insights", "settings"];
@@ -381,6 +382,56 @@ async function apiRequest(path, options = {}) {
   return payload;
 }
 
+function loadAdsenseScript(client) {
+  if (!client || document.querySelector(`script[data-adsense-client="${client}"]`)) return;
+
+  const script = document.createElement("script");
+  script.async = true;
+  script.crossOrigin = "anonymous";
+  script.dataset.adsenseClient = client;
+  script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+  document.head.appendChild(script);
+}
+
+function renderBottomAdSlot(ads = {}) {
+  const container = document.querySelector("#adBannerContent");
+  const client = String(ads.adsenseClient || "").trim();
+  const slot = String(ads.bottomBannerSlot || "").trim();
+  if (!container || !client || !slot) return;
+
+  loadAdsenseScript(client);
+  container.className = "ad-banner-inner ad-live-slot";
+  container.innerHTML = `
+    <ins class="adsbygoogle"
+      style="display:block"
+      data-ad-client="${escapeHtml(client)}"
+      data-ad-slot="${escapeHtml(slot)}"
+      data-ad-format="auto"
+      data-full-width-responsive="true"></ins>
+  `;
+
+  window.requestAnimationFrame(() => {
+    try {
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adsbygoogle.push({});
+    } catch (error) {
+      console.warn("AdSense slot could not be initialized", error);
+    }
+  });
+}
+
+async function initAds() {
+  if (adInitialized) return;
+  adInitialized = true;
+
+  try {
+    const config = await apiRequest("/api/public-config");
+    renderBottomAdSlot(config.ads);
+  } catch (error) {
+    console.warn("Ad config could not be loaded", error);
+  }
+}
+
 function applyServerSession(result) {
   currentLedgerId = result.ledgerId || result.account?.ledgerId || currentLedgerId;
   currentUserPhone = result.account?.phone || currentUserPhone;
@@ -561,6 +612,7 @@ function showAppScene() {
 function startApp() {
   if (appStarted) {
     showAppScene();
+    initAds();
     render();
     return;
   }
@@ -570,6 +622,7 @@ function startApp() {
   initForms();
   initProfileControls();
   initAccountControls();
+  initAds();
   render();
   persist();
   initNavigationHistory();

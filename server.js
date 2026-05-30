@@ -433,6 +433,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === "/api/public-config") {
+    sendJson(res, 200, {
+      ads: {
+        provider: process.env.AD_PROVIDER || "adsense",
+        adsenseClient: process.env.ADSENSE_CLIENT || "",
+        bottomBannerSlot: process.env.ADSENSE_BOTTOM_BANNER_SLOT || process.env.ADSENSE_SLOT || ""
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/auth/login" && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
