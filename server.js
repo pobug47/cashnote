@@ -67,6 +67,12 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function adsensePublisherId() {
+  const client = String(process.env.ADSENSE_CLIENT || "");
+  const id = String(process.env.ADSENSE_PUBLISHER_ID || client.replace(/^ca-/, ""));
+  return /^pub-\d+$/.test(id) ? id : "";
+}
+
 function createId(prefix) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -441,6 +447,13 @@ const server = http.createServer(async (req, res) => {
         bottomBannerSlot: process.env.ADSENSE_BOTTOM_BANNER_SLOT || process.env.ADSENSE_SLOT || ""
       }
     });
+    return;
+  }
+
+  if (pathname === "/ads.txt") {
+    const publisherId = adsensePublisherId();
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(publisherId ? `google.com, ${publisherId}, DIRECT, f08c47fec0942fa0\n` : "");
     return;
   }
 
