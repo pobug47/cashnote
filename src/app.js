@@ -836,6 +836,8 @@ function updateStoredUserAuth(email) {
 function initAccountControls() {
   const emailChangeForm = document.querySelector("#emailChangeForm");
   const requestEmailChangeCode = document.querySelector("#requestEmailChangeCode");
+  const exportDataButton = document.querySelector("#exportDataButton");
+  const deleteAccountButton = document.querySelector("#deleteAccountButton");
   const memberForm = document.querySelector("#memberForm");
   const memberList = document.querySelector("#memberList");
   const inviteForm = document.querySelector("#inviteForm");
@@ -896,6 +898,60 @@ function initAccountControls() {
       emailChangeForm.reset();
       renderAccountSettings();
       setFormStatus("#accountSettingsStatus", "이메일이 변경되었습니다.", "success");
+    } catch (error) {
+      setFormStatus("#accountSettingsStatus", error.message, "error");
+    }
+  });
+
+  exportDataButton?.addEventListener("click", async () => {
+    try {
+      const response = await fetch("/api/account/export.xlsx", {
+        headers: {
+          ...(currentSessionToken ? { Authorization: `Bearer ${currentSessionToken}` } : {})
+        }
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "내 데이터를 내보내지 못했습니다.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `cashnote-backup-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setFormStatus("#accountSettingsStatus", "내 데이터를 엑셀 파일로 내려받았습니다.", "success");
+    } catch (error) {
+      setFormStatus("#accountSettingsStatus", error.message, "error");
+    }
+  });
+
+  deleteAccountButton?.addEventListener("click", async () => {
+    const firstConfirm = window.confirm("계정과 이 가계부 데이터를 삭제할까요? 마지막 사용자라면 가계부 데이터도 함께 삭제됩니다.");
+    if (!firstConfirm) return;
+
+    const password = String(window.prompt("삭제하려면 현재 비밀번호를 입력해 주세요.") || "");
+    if (!password) return;
+
+    try {
+      await apiRequest("/api/account/delete", {
+        method: "POST",
+        body: { password }
+      });
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_LEDGER_KEY);
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      if (currentLedgerId) localStorage.removeItem(ledgerStorageKey(currentLedgerId));
+      if (currentUserEmail) localStorage.removeItem(userStorageKey(currentUserEmail));
+      currentUserEmail = null;
+      currentLedgerId = null;
+      currentSessionToken = "";
+      state = structuredClone(sampleData);
+      showLoginScene("계정이 삭제되었습니다.");
     } catch (error) {
       setFormStatus("#accountSettingsStatus", error.message, "error");
     }

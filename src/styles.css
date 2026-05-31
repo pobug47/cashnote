@@ -1435,6 +1435,27 @@ select {
   font-size: 20px;
 }
 
+.account-data-actions {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.account-data-actions strong,
+.account-data-actions span {
+  display: block;
+}
+
+.account-data-actions span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .form-status {
   min-height: 20px;
   margin: 0;
