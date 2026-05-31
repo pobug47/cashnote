@@ -76,6 +76,7 @@
           <button class="nav-item" data-view="investments">투자/배당</button>
           <button class="nav-item" data-view="insights">기록 회고</button>
           <button class="nav-item" data-view="settings">시스템 설정</button>
+          <button id="adminNavItem" class="nav-item" data-view="admin" hidden>관리자</button>
         </nav>
         <div class="storage-panel">
           <span>저장 방식</span>
@@ -561,6 +562,67 @@
             </section>
           </div>
         </section>
+
+        <section id="adminView" class="view">
+          <div class="admin-layout">
+            <form id="noticeForm" class="panel admin-notice-form">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="noticeFormTitle">공지 작성</h2>
+                  <span>서버 점검이나 변경 예정 내용을 로그인 사용자에게 팝업으로 안내합니다.</span>
+                </div>
+              </div>
+              <label>
+                제목
+                <input name="title" type="text" maxlength="80" placeholder="예: 6월 2일 서버 점검 안내" required />
+              </label>
+              <div class="admin-form-grid">
+                <label>
+                  중요도
+                  <select name="severity">
+                    <option value="info">일반 안내</option>
+                    <option value="warning">중요 안내</option>
+                    <option value="maintenance">점검 안내</option>
+                  </select>
+                </label>
+                <label class="checkbox-label">
+                  <input name="active" type="checkbox" checked />
+                  사용자에게 표시
+                </label>
+              </div>
+              <div class="admin-form-grid">
+                <label>
+                  시작 일시
+                  <input name="startsAt" type="datetime-local" />
+                </label>
+                <label>
+                  종료 일시
+                  <input name="endsAt" type="datetime-local" />
+                </label>
+              </div>
+              <label>
+                내용
+                <textarea name="body" rows="6" maxlength="1000" placeholder="공지 내용을 입력해 주세요." required></textarea>
+              </label>
+              <div class="form-actions">
+                <button id="cancelNoticeEdit" type="button" class="secondary-button" hidden>수정 취소</button>
+                <button id="noticeSubmitButton" type="submit" class="primary-button">공지 저장</button>
+              </div>
+              <p id="noticeAdminStatus" class="form-status" aria-live="polite"></p>
+            </form>
+
+            <section class="panel admin-notice-list-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>공지 목록</h2>
+                  <span>활성화된 공지는 로그인 직후 사용자에게 표시됩니다.</span>
+                </div>
+                <span id="noticeCount"></span>
+              </div>
+              <div id="noticeList" class="notice-list"></div>
+            </section>
+          </div>
+        </section>
       </main>
 
       <aside id="bottomAdBanner" class="bottom-ad-banner" aria-label="광고">
@@ -640,6 +702,27 @@
             <button type="submit" class="primary-button">비밀번호 변경</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div id="noticeModal" class="modal-backdrop" hidden>
+      <section class="goal-modal notice-modal" role="dialog" aria-modal="true" aria-labelledby="noticeModalTitle">
+        <div class="goal-modal-icon notice-modal-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 4v10" />
+            <path d="M12 18h.01" />
+            <path d="M5 8a7 7 0 0 1 14 0c0 7 3 7 3 9H2c0-2 3-2 3-9Z" />
+          </svg>
+        </div>
+        <div>
+          <span class="modal-eyebrow">공지사항</span>
+          <h2 id="noticeModalTitle">서비스 공지</h2>
+          <p>확인하지 않은 안내가 있습니다.</p>
+        </div>
+        <div id="noticeModalList" class="notice-modal-list"></div>
+        <div class="modal-actions">
+          <button id="dismissNoticeModal" type="button" class="primary-button">확인했습니다</button>
+        </div>
       </section>
     </div>
 

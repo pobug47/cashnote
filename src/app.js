@@ -6,6 +6,7 @@ const INVITES_KEY = "finance-board-invites-v1";
 const SESSION_KEY = "finance-board-session";
 const SESSION_LEDGER_KEY = "finance-board-session-ledger";
 const SESSION_TOKEN_KEY = "finance-board-session-token";
+const NOTICE_DISMISS_PREFIX = "cashnote-dismissed-notices:";
 
 const sampleTransactions = [
   { date: "2025-10-01", type: "income", category: "급여", amount: 3200000, memo: "10월 급여" },
@@ -94,9 +95,14 @@ let pendingGoal = null;
 let pendingGoalAction = "set";
 let persistTimer = null;
 let adInitialized = false;
+let currentAccountIsAdmin = false;
+let editingNoticeId = null;
+let adminNotices = [];
+let adminNoticeRefreshPromise = null;
+let activeNoticeModalIds = [];
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
-const appViews = ["dashboard", "transactions", "investments", "insights", "settings"];
+const appViews = ["dashboard", "transactions", "investments", "insights", "settings", "admin"];
 const securityTabs = ["details", "announcements", "projections"];
 
 const formatter = new Intl.NumberFormat("ko-KR", {
@@ -429,6 +435,7 @@ function applyServerSession(result) {
   currentLedgerId = result.ledgerId || result.account?.ledgerId || currentLedgerId;
   currentUserEmail = result.account?.email || result.account?.phone || currentUserEmail;
   currentSessionToken = result.sessionToken || currentSessionToken;
+  currentAccountIsAdmin = Boolean(result.account?.isAdmin);
   state = result.state || state;
   if (currentUserEmail) {
     state.auth = { email: currentUserEmail };
@@ -543,6 +550,214 @@ function renderMemberSettings() {
     .join("");
 }
 
+function renderAdminAccess() {
+  const adminNav = document.querySelector("#adminNavItem");
+  if (adminNav) adminNav.hidden = !currentAccountIsAdmin;
+  if (!currentAccountIsAdmin && currentView() === "admin") {
+    setView("dashboard", { replaceHistory: true });
+  }
+}
+
+function noticeSeverityLabel(severity) {
+  if (severity === "warning") return "중요";
+  if (severity === "maintenance") return "점검";
+  return "안내";
+}
+
+function formatNoticeDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function noticeScheduleLabel(notice) {
+  const startsAt = formatNoticeDate(notice.startsAt);
+  const endsAt = formatNoticeDate(notice.endsAt);
+  if (startsAt && endsAt) return `${startsAt} ~ ${endsAt}`;
+  if (startsAt) return `${startsAt}부터`;
+  if (endsAt) return `${endsAt}까지`;
+  return "즉시 표시";
+}
+
+function noticeDismissKey() {
+  return `${NOTICE_DISMISS_PREFIX}${currentUserEmail || "anonymous"}`;
+}
+
+function dismissedNoticeIds() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(noticeDismissKey()) || "[]");
+    return new Set(Array.isArray(saved) ? saved : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissedNoticeIds(ids) {
+  localStorage.setItem(noticeDismissKey(), JSON.stringify([...ids]));
+}
+
+async function checkActiveNotices() {
+  if (!currentSessionToken) return;
+
+  try {
+    const result = await apiRequest("/api/notices/active");
+    const dismissed = dismissedNoticeIds();
+    const notices = (result.notices || []).filter((notice) => !dismissed.has(notice.id));
+    if (notices.length) openNoticeModal(notices);
+  } catch (error) {
+    console.warn("Notices could not be loaded", error);
+  }
+}
+
+function openNoticeModal(notices) {
+  activeNoticeModalIds = notices.map((notice) => notice.id);
+  const list = document.querySelector("#noticeModalList");
+  if (!list) return;
+
+  list.innerHTML = notices
+    .map(
+      (notice) => `
+        <article class="notice-modal-item ${escapeHtml(notice.severity)}">
+          <span class="notice-badge ${escapeHtml(notice.severity)}">${noticeSeverityLabel(notice.severity)}</span>
+          <div>
+            <strong>${escapeHtml(notice.title)}</strong>
+            <p>${escapeHtml(notice.body).replaceAll("\n", "<br>")}</p>
+          </div>
+          <small>${escapeHtml(noticeScheduleLabel(notice))}</small>
+        </article>
+      `
+    )
+    .join("");
+  document.querySelector("#noticeModal").hidden = false;
+  document.querySelector("#dismissNoticeModal")?.focus();
+}
+
+function closeNoticeModal() {
+  const dismissed = dismissedNoticeIds();
+  activeNoticeModalIds.forEach((id) => dismissed.add(id));
+  saveDismissedNoticeIds(dismissed);
+  activeNoticeModalIds = [];
+  document.querySelector("#noticeModal").hidden = true;
+}
+
+function datetimeLocalValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function datetimeLocalToIso(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function noticePayloadFromForm(form) {
+  return {
+    title: String(form.get("title") || "").trim(),
+    body: String(form.get("body") || "").trim(),
+    severity: String(form.get("severity") || "info"),
+    active: form.get("active") === "on",
+    startsAt: datetimeLocalToIso(form.get("startsAt")),
+    endsAt: datetimeLocalToIso(form.get("endsAt"))
+  };
+}
+
+function resetNoticeForm() {
+  const form = document.querySelector("#noticeForm");
+  if (!form) return;
+  editingNoticeId = null;
+  form.reset();
+  form.elements.active.checked = true;
+  document.querySelector("#noticeFormTitle").textContent = "공지 작성";
+  document.querySelector("#noticeSubmitButton").textContent = "공지 저장";
+  document.querySelector("#cancelNoticeEdit").hidden = true;
+}
+
+function renderAdminNotices(notices = adminNotices) {
+  const list = document.querySelector("#noticeList");
+  const count = document.querySelector("#noticeCount");
+  if (!list) return;
+  if (count) count.textContent = `${notices.length}건`;
+
+  list.innerHTML = notices.length
+    ? notices
+        .map(
+          (notice) => `
+            <article class="notice-item ${notice.active ? "" : "inactive"}" data-notice-id="${escapeHtml(notice.id)}">
+              <div class="notice-item-top">
+                <div class="notice-item-title">
+                  <span class="notice-badge ${escapeHtml(notice.severity)}">${noticeSeverityLabel(notice.severity)}</span>
+                  <strong>${escapeHtml(notice.title)}</strong>
+                  <small>${notice.active ? "표시 중" : "비활성"} · ${escapeHtml(noticeScheduleLabel(notice))}</small>
+                </div>
+                <small>${escapeHtml(formatNoticeDate(notice.updatedAt) || "방금")}</small>
+              </div>
+              <p>${escapeHtml(notice.body).replaceAll("\n", "<br>")}</p>
+              <div class="notice-item-actions">
+                <button class="mini-button" type="button" data-edit-notice="${escapeHtml(notice.id)}">수정</button>
+                <button class="mini-button danger" type="button" data-delete-notice="${escapeHtml(notice.id)}">삭제</button>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="list-item"><span>등록된 공지사항이 없습니다.</span></div>`;
+}
+
+async function fetchAdminNotices({ force = false } = {}) {
+  if (!currentAccountIsAdmin) return;
+  if (adminNoticeRefreshPromise && !force) return adminNoticeRefreshPromise;
+
+  adminNoticeRefreshPromise = apiRequest("/api/admin/notices")
+    .then((result) => {
+      adminNotices = result.notices || [];
+      renderAdminNotices();
+      return adminNotices;
+    })
+    .catch((error) => {
+      setFormStatus("#noticeAdminStatus", error.message, "error");
+      return [];
+    })
+    .finally(() => {
+      adminNoticeRefreshPromise = null;
+    });
+  return adminNoticeRefreshPromise;
+}
+
+function startNoticeEdit(id) {
+  const notice = adminNotices.find((item) => item.id === id);
+  const form = document.querySelector("#noticeForm");
+  if (!notice || !form) return;
+
+  editingNoticeId = notice.id;
+  form.elements.title.value = notice.title || "";
+  form.elements.body.value = notice.body || "";
+  form.elements.severity.value = notice.severity || "info";
+  form.elements.active.checked = Boolean(notice.active);
+  form.elements.startsAt.value = datetimeLocalValue(notice.startsAt);
+  form.elements.endsAt.value = datetimeLocalValue(notice.endsAt);
+  document.querySelector("#noticeFormTitle").textContent = "공지 수정";
+  document.querySelector("#noticeSubmitButton").textContent = "수정 저장";
+  document.querySelector("#cancelNoticeEdit").hidden = false;
+  form.elements.title.focus();
+}
+
+function renderAdmin() {
+  renderAdminAccess();
+  if (!currentAccountIsAdmin) return;
+  renderAdminNotices();
+}
+
 function renderProfile() {
   const rawName = typeof state.profile?.name === "string" ? state.profile.name : "민석";
   const name = rawName.trim() || "사용자";
@@ -642,6 +857,7 @@ function startApp() {
     showAppScene();
     initAds();
     render();
+    checkActiveNotices();
     return;
   }
 
@@ -650,10 +866,12 @@ function startApp() {
   initForms();
   initProfileControls();
   initAccountControls();
+  initAdminControls();
   initAds();
   render();
   persist();
   initNavigationHistory();
+  checkActiveNotices();
 }
 
 function initAuth() {
@@ -763,6 +981,7 @@ async function resumeSession() {
     currentUserEmail = null;
     currentLedgerId = null;
     currentSessionToken = "";
+    currentAccountIsAdmin = false;
     showLoginScene(`서버 DB에서 로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`);
   }
 }
@@ -814,6 +1033,10 @@ function initProfileControls() {
     currentUserEmail = null;
     currentLedgerId = null;
     currentSessionToken = "";
+    currentAccountIsAdmin = false;
+    adminNotices = [];
+    editingNoticeId = null;
+    activeNoticeModalIds = [];
     showLoginScene("로그아웃되었습니다. 다시 로그인해 주세요.");
   });
 }
@@ -890,12 +1113,14 @@ function initAccountControls() {
       });
       currentUserEmail = result.account.email;
       currentLedgerId = result.ledgerId;
+      currentAccountIsAdmin = Boolean(result.account?.isAdmin);
       state.auth = { email: currentUserEmail };
       sessionStorage.setItem(SESSION_KEY, currentUserEmail);
       sessionStorage.setItem(SESSION_LEDGER_KEY, currentLedgerId);
       localStorage.removeItem(userStorageKey(oldEmail));
       persist();
       emailChangeForm.reset();
+      renderAdminAccess();
       renderAccountSettings();
       setFormStatus("#accountSettingsStatus", "이메일이 변경되었습니다.", "success");
     } catch (error) {
@@ -1050,6 +1275,61 @@ function initAccountControls() {
       `;
     } catch (error) {
       document.querySelector("#inviteCodeResult").innerHTML = `<small>${escapeHtml(error.message)}</small>`;
+    }
+  });
+}
+
+function initAdminControls() {
+  const form = document.querySelector("#noticeForm");
+  const cancelButton = document.querySelector("#cancelNoticeEdit");
+  const list = document.querySelector("#noticeList");
+  if (!form || !list) return;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = noticePayloadFromForm(new FormData(form));
+    if (!payload.title || !payload.body) {
+      setFormStatus("#noticeAdminStatus", "공지 제목과 내용을 입력해 주세요.", "error");
+      return;
+    }
+
+    try {
+      await apiRequest(editingNoticeId ? `/api/admin/notices/${encodeURIComponent(editingNoticeId)}` : "/api/admin/notices", {
+        method: editingNoticeId ? "PUT" : "POST",
+        body: payload
+      });
+      setFormStatus("#noticeAdminStatus", editingNoticeId ? "공지사항을 수정했습니다." : "공지사항을 등록했습니다.", "success");
+      resetNoticeForm();
+      await fetchAdminNotices({ force: true });
+    } catch (error) {
+      setFormStatus("#noticeAdminStatus", error.message, "error");
+    }
+  });
+
+  cancelButton?.addEventListener("click", () => {
+    resetNoticeForm();
+    setFormStatus("#noticeAdminStatus");
+  });
+
+  list.addEventListener("click", async (event) => {
+    const editButton = event.target.closest("[data-edit-notice]");
+    if (editButton) {
+      startNoticeEdit(editButton.dataset.editNotice);
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-delete-notice]");
+    if (!deleteButton) return;
+    const notice = adminNotices.find((item) => item.id === deleteButton.dataset.deleteNotice);
+    if (!notice || !window.confirm(`'${notice.title}' 공지를 삭제할까요?`)) return;
+
+    try {
+      await apiRequest(`/api/admin/notices/${encodeURIComponent(notice.id)}`, { method: "DELETE" });
+      setFormStatus("#noticeAdminStatus", "공지사항을 삭제했습니다.", "success");
+      if (editingNoticeId === notice.id) resetNoticeForm();
+      await fetchAdminNotices({ force: true });
+    } catch (error) {
+      setFormStatus("#noticeAdminStatus", error.message, "error");
     }
   });
 }
@@ -2888,6 +3168,7 @@ function render() {
   renderTransactions();
   renderSecurities();
   renderInsights();
+  renderAdmin();
 }
 
 function currentView() {
@@ -2897,6 +3178,7 @@ function currentView() {
 
 function viewFromLocation() {
   const hashView = window.location.hash.replace("#", "").split("?")[0];
+  if (hashView === "admin" && !currentAccountIsAdmin) return "dashboard";
   return appViews.includes(hashView) ? hashView : "dashboard";
 }
 
@@ -2923,10 +3205,14 @@ function writeNavigationHistory(view, { replace = false } = {}) {
 
 function setView(view, options = {}) {
   if (!appViews.includes(view)) return;
+  if (view === "admin" && !currentAccountIsAdmin) {
+    view = "dashboard";
+  }
   const previousView = currentView();
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active-view"));
   document.querySelector(`#${view}View`).classList.add("active-view");
+  if (view === "admin") fetchAdminNotices();
   if (options.updateHistory !== false) {
     writeNavigationHistory(view, { replace: options.replaceHistory || previousView === view });
   }
@@ -3364,6 +3650,10 @@ document.querySelector("#confirmGoalModal").addEventListener("click", confirmPen
 document.querySelector("#goalConfirmModal").addEventListener("click", (event) => {
   if (event.target.id === "goalConfirmModal") closeGoalModal();
 });
+document.querySelector("#dismissNoticeModal").addEventListener("click", closeNoticeModal);
+document.querySelector("#noticeModal").addEventListener("click", (event) => {
+  if (event.target.id === "noticeModal") closeNoticeModal();
+});
 document.querySelectorAll(".goal-progress-list").forEach((list) => {
   list.addEventListener("click", (event) => {
     const item = event.target.closest("[data-progress-goal-id]");
@@ -3378,6 +3668,9 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && !document.querySelector("#passwordResetModal").hidden) {
     closePasswordResetModal();
+  }
+  if (event.key === "Escape" && !document.querySelector("#noticeModal").hidden) {
+    closeNoticeModal();
   }
 });
 

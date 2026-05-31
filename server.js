@@ -15,6 +15,7 @@ const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 const verificationTtlMs = 1000 * 60 * 10;
 const verificationCooldownMs = 1000 * 60;
 const passwordMinLength = 8;
+const noticeSeverities = ["info", "warning", "maintenance"];
 let dbReadyPromise = null;
 const rateLimits = new Map();
 const pool = new Pool({
@@ -213,11 +214,24 @@ async function getDb() {
         verified_at TIMESTAMPTZ,
         PRIMARY KEY (email, purpose)
       );
+      CREATE TABLE IF NOT EXISTS notices (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        starts_at TIMESTAMPTZ,
+        ends_at TIMESTAMPTZ,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       CREATE INDEX IF NOT EXISTS idx_accounts_ledger_id ON accounts(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_invites_ledger_id ON invites(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(email);
       CREATE INDEX IF NOT EXISTS idx_sessions_ledger_id ON sessions(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_email_verifications_expires_at ON email_verifications(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_notices_active ON notices(active);
     `).then(() => pool).catch((error) => {
       dbReadyPromise = null;
       throw error;
@@ -253,8 +267,61 @@ async function saveLedgerState(db, ledgerId, state) {
   );
 }
 
+function adminEmailSet() {
+  return new Set(
+    String(process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((email) => normalizeEmail(email))
+      .filter(Boolean)
+  );
+}
+
+function isAdminEmail(email) {
+  return adminEmailSet().has(normalizeEmail(email));
+}
+
 function publicAccount(account) {
-  return account ? { email: account.email, ledgerId: account.ledgerId } : null;
+  return account ? { email: account.email, ledgerId: account.ledgerId, isAdmin: isAdminEmail(account.email) } : null;
+}
+
+function normalizeNoticeSeverity(value) {
+  return noticeSeverities.includes(value) ? value : "info";
+}
+
+function nullableTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function publicNotice(row) {
+  return row
+    ? {
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        severity: normalizeNoticeSeverity(row.severity),
+        active: Boolean(row.active),
+        startsAt: row.startsAt || null,
+        endsAt: row.endsAt || null,
+        createdBy: row.createdBy || "",
+        createdAt: row.createdAt || null,
+        updatedAt: row.updatedAt || null
+      }
+    : null;
+}
+
+function requireAdminSession(session, res) {
+  if (!session) {
+    sendJson(res, 401, { error: "로그인이 필요합니다." });
+    return false;
+  }
+  if (!isAdminEmail(session.email)) {
+    sendJson(res, 403, { error: "관리자 권한이 필요합니다." });
+    return false;
+  }
+  return true;
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
@@ -917,6 +984,195 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === "/api/notices/active" && req.method === "GET") {
+    try {
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!session) {
+        sendJson(res, 401, { error: "로그인이 필요합니다." });
+        return;
+      }
+
+      const result = await db.query(`
+        SELECT
+          id,
+          title,
+          body,
+          severity,
+          active,
+          starts_at AS "startsAt",
+          ends_at AS "endsAt",
+          created_by AS "createdBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM notices
+        WHERE active = TRUE
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (ends_at IS NULL OR ends_at >= NOW())
+        ORDER BY COALESCE(starts_at, created_at) DESC, created_at DESC
+      `);
+      sendJson(res, 200, { notices: result.rows.map(publicNotice) });
+    } catch (error) {
+      sendJson(res, 500, { error: "공지사항을 불러오지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/admin/notices" && req.method === "GET") {
+    try {
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      const result = await db.query(`
+        SELECT
+          id,
+          title,
+          body,
+          severity,
+          active,
+          starts_at AS "startsAt",
+          ends_at AS "endsAt",
+          created_by AS "createdBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM notices
+        ORDER BY updated_at DESC, created_at DESC
+      `);
+      sendJson(res, 200, { notices: result.rows.map(publicNotice) });
+    } catch (error) {
+      sendJson(res, 500, { error: "관리자 공지 목록을 불러오지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/admin/notices" && req.method === "POST") {
+    try {
+      const body = await readJsonBody(req);
+      const title = String(body.title || "").trim();
+      const noticeBody = String(body.body || "").trim();
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      if (!title || !noticeBody) {
+        sendJson(res, 400, { error: "공지 제목과 내용을 입력해 주세요." });
+        return;
+      }
+
+      const id = createId("notice");
+      const result = await db.query(
+        `
+          INSERT INTO notices (id, title, body, severity, active, starts_at, ends_at, created_by, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+          RETURNING
+            id,
+            title,
+            body,
+            severity,
+            active,
+            starts_at AS "startsAt",
+            ends_at AS "endsAt",
+            created_by AS "createdBy",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [
+          id,
+          title,
+          noticeBody,
+          normalizeNoticeSeverity(body.severity),
+          body.active !== false,
+          nullableTimestamp(body.startsAt),
+          nullableTimestamp(body.endsAt),
+          session.email
+        ]
+      );
+      sendJson(res, 201, { notice: publicNotice(result.rows[0]) });
+    } catch (error) {
+      sendJson(res, 500, { error: "공지사항을 저장하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/admin/notices/") && req.method === "PUT") {
+    try {
+      const id = pathname.split("/").pop();
+      const body = await readJsonBody(req);
+      const title = String(body.title || "").trim();
+      const noticeBody = String(body.body || "").trim();
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      if (!title || !noticeBody) {
+        sendJson(res, 400, { error: "공지 제목과 내용을 입력해 주세요." });
+        return;
+      }
+
+      const result = await db.query(
+        `
+          UPDATE notices
+          SET title = $2,
+              body = $3,
+              severity = $4,
+              active = $5,
+              starts_at = $6,
+              ends_at = $7,
+              updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            title,
+            body,
+            severity,
+            active,
+            starts_at AS "startsAt",
+            ends_at AS "endsAt",
+            created_by AS "createdBy",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [
+          id,
+          title,
+          noticeBody,
+          normalizeNoticeSeverity(body.severity),
+          body.active !== false,
+          nullableTimestamp(body.startsAt),
+          nullableTimestamp(body.endsAt)
+        ]
+      );
+      if (!result.rows[0]) {
+        sendJson(res, 404, { error: "공지사항을 찾을 수 없습니다." });
+        return;
+      }
+      sendJson(res, 200, { notice: publicNotice(result.rows[0]) });
+    } catch (error) {
+      sendJson(res, 500, { error: "공지사항을 수정하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/admin/notices/") && req.method === "DELETE") {
+    try {
+      const id = pathname.split("/").pop();
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      const result = await db.query("DELETE FROM notices WHERE id = $1 RETURNING id", [id]);
+      if (!result.rows[0]) {
+        sendJson(res, 404, { error: "공지사항을 찾을 수 없습니다." });
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (error) {
+      sendJson(res, 500, { error: "공지사항을 삭제하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
   if (pathname === "/api/account/change-email" && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
@@ -959,7 +1215,7 @@ const server = http.createServer(async (req, res) => {
       await db.query("UPDATE accounts SET email = $1, updated_at = $2 WHERE email = $3", [newEmail, new Date().toISOString(), session.email]);
       const state = (await getLedgerState(db, account.ledgerId)) || {};
       await saveLedgerState(db, account.ledgerId, { ...state, auth: { email: newEmail } });
-      sendJson(res, 200, { account: { email: newEmail, ledgerId: account.ledgerId }, ledgerId: account.ledgerId });
+      sendJson(res, 200, { account: publicAccount({ email: newEmail, ledgerId: account.ledgerId }), ledgerId: account.ledgerId });
     } catch (error) {
       sendJson(res, 500, { error: "이메일을 변경하지 못했습니다.", detail: error.message });
     }

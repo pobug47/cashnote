@@ -50,6 +50,11 @@ Copy-Item .env.production.example .env
 ```
 
 `.env`에서 `POSTGRES_PASSWORD`를 긴 임의 문자열로 바꿉니다. 도메인을 아직 연결하지 않았다면 `CADDY_HOST=:80`으로 두고 외부 IP의 HTTP 접속으로 먼저 확인합니다.
+관리자 공지 기능을 사용하려면 관리자 계정 이메일을 쉼표로 구분해 `ADMIN_EMAILS`에 입력합니다.
+
+```text
+ADMIN_EMAILS=owner@example.com
+```
 
 ```powershell
 docker compose -f docker-compose.prod.yml --env-file .env up -d --build
@@ -93,6 +98,7 @@ Play Store나 App Store 배포가 필요하면 현재 웹앱을 Capacitor로 감
 - 티커 기준 월 요약 보드와 투자 항목 연동
 - 누적 저축, 누적 식비, 예상 연 배당 회고 화면
 - PostgreSQL 기반 사용자/가계부/초대코드/세션 저장
+- 관리자 공지 등록 및 로그인 공지 팝업
 - 브라우저 로컬 저장소 캐시는 임시 오프라인 보조 저장소로 사용
 
 ## 다음 개발 후보
