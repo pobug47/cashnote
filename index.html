@@ -18,16 +18,28 @@
         <div>
           <span class="login-mark">₩</span>
           <h1>자산 보드 로그인</h1>
-          <p id="loginHint">전화번호와 비밀번호를 입력해 주세요.</p>
+          <p id="loginHint">이메일과 비밀번호를 입력해 주세요.</p>
         </div>
         <label>
-          전화번호
-          <input name="phone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+          이메일
+          <input name="email" type="email" autocomplete="email" placeholder="name@example.com" required />
         </label>
         <label>
           비밀번호
           <input name="password" type="password" autocomplete="current-password" required />
         </label>
+        <label id="signupConfirmPasswordField" hidden>
+          비밀번호 확인
+          <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" />
+        </label>
+        <div id="signupVerificationField" class="login-verification-field" hidden>
+          <label>
+            이메일 인증번호
+            <input name="verificationCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6자리" />
+          </label>
+          <button id="requestSignupCodeButton" type="button" class="secondary-button">인증번호 받기</button>
+          <p id="loginVerificationStatus" class="form-status login-status" aria-live="polite"></p>
+        </div>
         <label id="inviteCodeField" hidden>
           초대 코드
           <input name="inviteCode" type="text" autocomplete="off" placeholder="초대받은 경우만 입력" />
@@ -472,9 +484,19 @@
               <div class="invite-box">
                 <div>
                   <strong>신규 작성자 초대</strong>
-                  <span>초대받은 사람은 로그인할 때 초대 코드를 입력하면 같은 가계부에 참여합니다.</span>
+                  <span>초대받을 사람의 이메일로 초대 코드와 링크를 보냅니다.</span>
                 </div>
-                <button id="createInviteCode" type="button" class="secondary-button">초대 코드 만들기</button>
+                <form id="inviteForm" class="invite-form">
+                  <label>
+                    초대받을 이메일
+                    <input name="inviteEmail" type="email" autocomplete="email" placeholder="name@example.com" required />
+                  </label>
+                  <label>
+                    작성자 이름
+                    <input name="memberName" type="text" maxlength="20" placeholder="예: 남편, 아내, 가족" />
+                  </label>
+                  <button id="createInviteCode" type="submit" class="secondary-button">초대 메일 보내기</button>
+                </form>
                 <p id="inviteCodeResult" class="invite-code-result" aria-live="polite"></p>
               </div>
             </section>
@@ -483,23 +505,30 @@
               <div class="panel-heading">
                 <div>
                   <h2>계정 설정</h2>
-                  <span>로그인에 사용하는 전화번호를 변경합니다.</span>
+                  <span>로그인에 사용하는 이메일을 변경합니다.</span>
                 </div>
               </div>
               <div class="account-summary">
-                <span>현재 전화번호</span>
-                <strong id="currentPhoneLabel"></strong>
+                <span>현재 이메일</span>
+                <strong id="currentEmailLabel"></strong>
               </div>
-              <form id="phoneChangeForm" class="account-form">
+              <form id="emailChangeForm" class="account-form">
                 <label>
-                  새 전화번호
-                  <input name="newPhone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+                  새 이메일
+                  <input name="newEmail" type="email" autocomplete="email" placeholder="name@example.com" required />
                 </label>
+                <div class="inline-field-actions">
+                  <label>
+                    이메일 인증번호
+                    <input name="verificationCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6자리" required />
+                  </label>
+                  <button id="requestEmailChangeCode" type="button" class="secondary-button">인증번호 받기</button>
+                </div>
                 <label>
                   현재 비밀번호
                   <input name="currentPassword" type="password" autocomplete="current-password" required />
                 </label>
-                <button type="submit" class="primary-button">전화번호 변경</button>
+                <button type="submit" class="primary-button">이메일 변경</button>
                 <p id="accountSettingsStatus" class="form-status" aria-live="polite"></p>
               </form>
             </section>
@@ -575,20 +604,27 @@
         <div>
           <span class="modal-eyebrow">계정 확인</span>
           <h2 id="passwordResetTitle">비밀번호 찾기</h2>
-          <p>등록된 전화번호를 입력하고 새 비밀번호를 설정해 주세요.</p>
+          <p>등록된 이메일로 인증번호를 받은 뒤 새 비밀번호를 설정해 주세요.</p>
         </div>
         <form id="passwordResetForm" class="account-form">
           <label>
-            전화번호
-            <input name="phone" type="tel" autocomplete="tel" placeholder="010-0000-0000" required />
+            이메일
+            <input name="email" type="email" autocomplete="email" placeholder="name@example.com" required />
           </label>
+          <div class="inline-field-actions">
+            <label>
+              이메일 인증번호
+              <input name="verificationCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6자리" required />
+            </label>
+            <button id="requestPasswordResetCode" type="button" class="secondary-button">인증번호 받기</button>
+          </div>
           <label>
             새 비밀번호
-            <input name="newPassword" type="password" autocomplete="new-password" required />
+            <input name="newPassword" type="password" autocomplete="new-password" minlength="8" required />
           </label>
           <label>
             새 비밀번호 확인
-            <input name="confirmPassword" type="password" autocomplete="new-password" required />
+            <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required />
           </label>
           <p id="passwordResetStatus" class="form-status" aria-live="polite"></p>
           <div class="modal-actions">

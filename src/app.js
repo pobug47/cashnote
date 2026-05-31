@@ -84,10 +84,10 @@ const inputMenus = {
 const categoryMenu = inputMenus.categories;
 const paymentMethodMenu = inputMenus.paymentMethods;
 
-let currentUserPhone = sessionPhone();
-let currentLedgerId = sessionLedgerId() || ledgerIdForPhone(currentUserPhone);
+let currentUserEmail = sessionEmail();
+let currentLedgerId = sessionLedgerId() || ledgerIdForEmail(currentUserEmail);
 let currentSessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY) || "";
-let state = loadState(currentUserPhone);
+let state = loadState(currentUserEmail);
 let editingTransactionId = null;
 let appStarted = false;
 let pendingGoal = null;
@@ -116,8 +116,8 @@ const monthLabelFormatter = new Intl.DateTimeFormat("ko-KR", {
   month: "long"
 });
 
-function userStorageKey(phone) {
-  return `${USER_STORAGE_PREFIX}${phone}`;
+function userStorageKey(email) {
+  return `${USER_STORAGE_PREFIX}${email}`;
 }
 
 function ledgerStorageKey(ledgerId) {
@@ -141,12 +141,12 @@ function saveAccounts(accounts) {
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
 }
 
-function accountForPhone(phone) {
-  return loadAccounts().find((account) => account.phone === phone) || null;
+function accountForEmail(email) {
+  return loadAccounts().find((account) => account.email === email || account.phone === email) || null;
 }
 
-function ledgerIdForPhone(phone) {
-  return accountForPhone(phone)?.ledgerId || phone || null;
+function ledgerIdForEmail(email) {
+  return accountForEmail(email)?.ledgerId || email || null;
 }
 
 function loadInvites() {
@@ -162,13 +162,13 @@ function saveInvites(invites) {
   localStorage.setItem(INVITES_KEY, JSON.stringify(invites));
 }
 
-function sessionPhone() {
+function sessionEmail() {
   const session = sessionStorage.getItem(SESSION_KEY);
   if (session && session !== "true") return session;
 
   try {
     const legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    return legacy?.auth?.phone || null;
+    return legacy?.auth?.email || legacy?.auth?.phone || null;
   } catch {
     return null;
   }
@@ -178,23 +178,23 @@ function sessionLedgerId() {
   return sessionStorage.getItem(SESSION_LEDGER_KEY) || null;
 }
 
-function legacyStateForPhone(phone) {
+function legacyStateForEmail(email) {
   try {
     const legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (legacy?.auth?.phone === phone) return legacy;
+    if (legacy?.auth?.email === email || legacy?.auth?.phone === email) return legacy;
   } catch {
     return null;
   }
   return null;
 }
 
-function hasStoredStateForPhone(phone) {
-  const ledgerId = ledgerIdForPhone(phone);
+function hasStoredStateForEmail(email) {
+  const ledgerId = ledgerIdForEmail(email);
   return Boolean(
-    phone &&
+    email &&
       ((ledgerId && localStorage.getItem(ledgerStorageKey(ledgerId))) ||
-        localStorage.getItem(userStorageKey(phone)) ||
-        legacyStateForPhone(phone))
+        localStorage.getItem(userStorageKey(email)) ||
+        legacyStateForEmail(email))
   );
 }
 
@@ -216,7 +216,7 @@ function ensureAuthorMembers() {
   state.householdMembers = uniqueNames([...(state.householdMembers || []), defaultAuthorName()]);
 }
 
-function createInitialStateForUser(phone) {
+function createInitialStateForUser(email) {
   const next = structuredClone(sampleData);
   next.selectedMonth = currentMonthValue();
   next.selectedTransactionId = null;
@@ -224,7 +224,7 @@ function createInitialStateForUser(phone) {
   next.selectedCalendarDate = null;
   next.transactionViewMode = "list";
   next.selectedSecurityId = null;
-  next.auth = { phone };
+  next.auth = { email };
   next.profile = {
     ...sampleData.profile,
     name: "사용자",
@@ -237,29 +237,20 @@ function createInitialStateForUser(phone) {
   return next;
 }
 
-function hasStoredStateForPhone(phone) {
-  const ledgerId = ledgerIdForPhone(phone);
-  return Boolean(
-    (ledgerId && localStorage.getItem(ledgerStorageKey(ledgerId))) ||
-      localStorage.getItem(userStorageKey(phone)) ||
-      legacyStateForPhone(phone)
-  );
-}
-
-function initialServerStateForPhone(phone) {
-  const initial = hasStoredStateForPhone(phone) ? loadState(phone) : createInitialStateForUser(phone);
+function initialServerStateForEmail(email) {
+  const initial = hasStoredStateForEmail(email) ? loadState(email) : createInitialStateForUser(email);
   return {
     ...initial,
-    auth: { phone }
+    auth: { email }
   };
 }
 
-function loadState(phone = currentUserPhone) {
-  const legacy = phone ? legacyStateForPhone(phone) : null;
-  const ledgerId = ledgerIdForPhone(phone);
-  const saved = phone
+function loadState(email = currentUserEmail) {
+  const legacy = email ? legacyStateForEmail(email) : null;
+  const ledgerId = ledgerIdForEmail(email);
+  const saved = email
     ? (ledgerId && localStorage.getItem(ledgerStorageKey(ledgerId))) ||
-      localStorage.getItem(userStorageKey(phone)) ||
+      localStorage.getItem(userStorageKey(email)) ||
       (legacy ? JSON.stringify(legacy) : null)
     : null;
   if (!saved) return structuredClone(sampleData);
@@ -282,7 +273,7 @@ function loadState(phone = currentUserPhone) {
       },
       householdMembers,
       themeColor: isHexColor(parsed.themeColor) ? parsed.themeColor : sampleData.themeColor,
-      auth: parsed.auth?.phone ? { phone: parsed.auth.phone } : null,
+      auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
       monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
       transactions: deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : structuredClone(sampleData.transactions)).map((item) => ({
         ...item,
@@ -333,13 +324,13 @@ function normalizeState(loaded) {
 function persist() {
   if (currentLedgerId) {
     localStorage.setItem(ledgerStorageKey(currentLedgerId), JSON.stringify(state));
-  } else if (currentUserPhone) {
-    localStorage.setItem(userStorageKey(currentUserPhone), JSON.stringify(state));
+  } else if (currentUserEmail) {
+    localStorage.setItem(userStorageKey(currentUserEmail), JSON.stringify(state));
   } else {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
-  if (currentUserPhone && currentLedgerId) {
+  if (currentUserEmail && currentLedgerId) {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
       apiRequest("/api/state", {
@@ -354,7 +345,7 @@ function persist() {
 }
 
 async function flushPersist() {
-  if (!currentUserPhone || !currentLedgerId) return;
+  if (!currentUserEmail || !currentLedgerId) return;
   clearTimeout(persistTimer);
   await apiRequest("/api/state", {
     method: "PUT",
@@ -377,7 +368,9 @@ async function apiRequest(path, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || payload.detail || "요청을 처리하지 못했습니다.");
+    const error = new Error(payload.error || payload.detail || "요청을 처리하지 못했습니다.");
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -434,13 +427,13 @@ async function initAds() {
 
 function applyServerSession(result) {
   currentLedgerId = result.ledgerId || result.account?.ledgerId || currentLedgerId;
-  currentUserPhone = result.account?.phone || currentUserPhone;
+  currentUserEmail = result.account?.email || result.account?.phone || currentUserEmail;
   currentSessionToken = result.sessionToken || currentSessionToken;
   state = result.state || state;
-  if (currentUserPhone) {
-    state.auth = { phone: currentUserPhone };
+  if (currentUserEmail) {
+    state.auth = { email: currentUserEmail };
   }
-  if (currentUserPhone) sessionStorage.setItem(SESSION_KEY, currentUserPhone);
+  if (currentUserEmail) sessionStorage.setItem(SESSION_KEY, currentUserEmail);
   if (currentLedgerId) sessionStorage.setItem(SESSION_LEDGER_KEY, currentLedgerId);
   if (currentSessionToken) sessionStorage.setItem(SESSION_TOKEN_KEY, currentSessionToken);
   if (currentLedgerId) localStorage.setItem(ledgerStorageKey(currentLedgerId), JSON.stringify(state));
@@ -499,19 +492,17 @@ function renderTheme() {
   });
 }
 
-function normalizePhone(value) {
-  return String(value || "").replace(/[^\d]/g, "");
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
 function normalizeInviteCode(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-function displayPhone(phone) {
-  const digits = normalizePhone(phone);
-  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  return digits || "-";
+function displayEmail(email) {
+  return String(email || "").trim() || "-";
 }
 
 function setFormStatus(selector, message = "", type = "") {
@@ -523,12 +514,12 @@ function setFormStatus(selector, message = "", type = "") {
 }
 
 function isAuthenticated() {
-  return Boolean(currentUserPhone && currentSessionToken && sessionStorage.getItem(SESSION_KEY) === currentUserPhone);
+  return Boolean(currentUserEmail && currentSessionToken && sessionStorage.getItem(SESSION_KEY) === currentUserEmail);
 }
 
 function renderAccountSettings() {
-  const currentPhoneLabel = document.querySelector("#currentPhoneLabel");
-  if (currentPhoneLabel) currentPhoneLabel.textContent = displayPhone(currentUserPhone || state.auth?.phone);
+  const currentEmailLabel = document.querySelector("#currentEmailLabel");
+  if (currentEmailLabel) currentEmailLabel.textContent = displayEmail(currentUserEmail || state.auth?.email);
 }
 
 function renderMemberSettings() {
@@ -588,7 +579,7 @@ function showLoginScene(message = null) {
   document.querySelector("#appShell").hidden = true;
   const hint = document.querySelector("#loginHint");
   if (hint) {
-    hint.textContent = message || "전화번호와 비밀번호로 서버 DB에 저장된 가계부를 불러옵니다.";
+    hint.textContent = message || "이메일과 비밀번호로 서버 DB에 저장된 가계부를 불러옵니다.";
   }
 }
 
@@ -602,6 +593,43 @@ function setInviteCodeFieldVisible(visible) {
   button.textContent = visible ? "초대 코드 숨기기" : "초대 코드 입력";
   if (!visible && input) input.value = "";
   if (visible && input) input.focus();
+}
+
+function prefillInviteCodeFromUrl() {
+  const loginForm = document.querySelector("#loginForm");
+  if (!loginForm) return;
+
+  const inviteCode = normalizeInviteCode(new URL(window.location.href).searchParams.get("invite"));
+  if (!inviteCode) return;
+
+  setInviteCodeFieldVisible(true);
+  loginForm.elements.inviteCode.value = inviteCode;
+  try {
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", cleanUrl);
+  } catch {
+    // URL 정리에 실패해도 초대 코드 입력 자체에는 영향이 없습니다.
+  }
+}
+
+function setSignupVerificationVisible(visible) {
+  const confirmField = document.querySelector("#signupConfirmPasswordField");
+  const verificationField = document.querySelector("#signupVerificationField");
+  const confirmInput = document.querySelector("#loginForm")?.elements.confirmPassword;
+  const codeInput = document.querySelector("#loginForm")?.elements.verificationCode;
+  if (!confirmField || !verificationField) return;
+
+  confirmField.hidden = !visible;
+  verificationField.hidden = !visible;
+  if (!visible) {
+    if (confirmInput) confirmInput.value = "";
+    if (codeInput) codeInput.value = "";
+    setFormStatus("#loginVerificationStatus");
+  }
+}
+
+function validatePasswordValue(password) {
+  return String(password || "").length >= 8;
 }
 
 function showAppScene() {
@@ -632,30 +660,65 @@ function initAuth() {
   renderTheme();
   initPasswordResetControls();
   const loginForm = document.querySelector("#loginForm");
+  const signupCodeButton = document.querySelector("#requestSignupCodeButton");
   document.querySelector("#showInviteCodeButton").addEventListener("click", () => {
     setInviteCodeFieldVisible(document.querySelector("#inviteCodeField").hidden);
   });
+  prefillInviteCodeFromUrl();
   document.querySelector("#forgotPasswordButton").addEventListener("click", () => {
-    openPasswordResetModal(loginForm.elements.phone.value);
+    openPasswordResetModal(loginForm.elements.email.value);
+  });
+  loginForm.elements.email.addEventListener("input", () => setSignupVerificationVisible(false));
+  signupCodeButton?.addEventListener("click", async () => {
+    const email = normalizeEmail(loginForm.elements.email.value);
+    if (!email) {
+      setFormStatus("#loginVerificationStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
+      loginForm.elements.email.focus();
+      return;
+    }
+    try {
+      await apiRequest("/api/auth/send-code", {
+        method: "POST",
+        body: { email, purpose: "signup" }
+      });
+      setFormStatus("#loginVerificationStatus", "인증번호를 이메일로 보냈습니다. 10분 안에 입력해 주세요.", "success");
+      loginForm.elements.verificationCode.focus();
+    } catch (error) {
+      setFormStatus("#loginVerificationStatus", error.message, "error");
+    }
   });
 
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(loginForm);
-    const phone = normalizePhone(form.get("phone"));
+    const email = normalizeEmail(form.get("email"));
     const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    const verificationCode = String(form.get("verificationCode") || "").replace(/[^\d]/g, "");
     const inviteCode = normalizeInviteCode(form.get("inviteCode"));
 
-    if (!phone || !password) return;
+    if (!email || !password) return;
+    if (!document.querySelector("#signupConfirmPasswordField").hidden) {
+      if (!validatePasswordValue(password)) {
+        setFormStatus("#loginVerificationStatus", "비밀번호는 8자 이상으로 입력해 주세요.", "error");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setFormStatus("#loginVerificationStatus", "비밀번호 확인이 서로 다릅니다.", "error");
+        return;
+      }
+    }
 
     try {
       const result = await apiRequest("/api/auth/login", {
         method: "POST",
         body: {
-          phone,
+          email,
           password,
+          confirmPassword,
+          verificationCode,
           inviteCode,
-          initialState: initialServerStateForPhone(phone)
+          initialState: initialServerStateForEmail(email)
         }
       });
       applyServerSession(result);
@@ -665,12 +728,19 @@ function initAuth() {
       persist();
       loginForm.reset();
       setInviteCodeFieldVisible(false);
+      setSignupVerificationVisible(false);
       startApp();
     } catch (error) {
       if (inviteCode) setInviteCodeFieldVisible(true);
+      if (error.payload?.requiresVerification) {
+        setSignupVerificationVisible(true);
+        const target = loginForm.elements.confirmPassword.value ? loginForm.elements.verificationCode : loginForm.elements.confirmPassword;
+        target.focus();
+      } else {
+        loginForm.elements.password.value = "";
+        loginForm.elements.password.focus();
+      }
       showLoginScene(error.message);
-      loginForm.elements.password.value = "";
-      loginForm.elements.password.focus();
     }
   });
 
@@ -690,7 +760,7 @@ async function resumeSession() {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_LEDGER_KEY);
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
-    currentUserPhone = null;
+    currentUserEmail = null;
     currentLedgerId = null;
     currentSessionToken = "";
     showLoginScene(`서버 DB에서 로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`);
@@ -741,22 +811,22 @@ function initProfileControls() {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_LEDGER_KEY);
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
-    currentUserPhone = null;
+    currentUserEmail = null;
     currentLedgerId = null;
     currentSessionToken = "";
     showLoginScene("로그아웃되었습니다. 다시 로그인해 주세요.");
   });
 }
 
-function updateStoredUserAuth(phone) {
-  const ledgerId = ledgerIdForPhone(phone);
-  const key = ledgerId ? ledgerStorageKey(ledgerId) : userStorageKey(phone);
+function updateStoredUserAuth(email) {
+  const ledgerId = ledgerIdForEmail(email);
+  const key = ledgerId ? ledgerStorageKey(ledgerId) : userStorageKey(email);
   const saved = localStorage.getItem(key);
   if (!saved) return;
 
   try {
     const parsed = JSON.parse(saved);
-    parsed.auth = { ...(parsed.auth || {}), phone };
+    parsed.auth = { ...(parsed.auth || {}), email };
     localStorage.setItem(key, JSON.stringify(parsed));
   } catch {
     // 손상된 저장 데이터는 다음 로그인 때 기본값으로 복구됩니다.
@@ -764,48 +834,68 @@ function updateStoredUserAuth(phone) {
 }
 
 function initAccountControls() {
-  const phoneChangeForm = document.querySelector("#phoneChangeForm");
+  const emailChangeForm = document.querySelector("#emailChangeForm");
+  const requestEmailChangeCode = document.querySelector("#requestEmailChangeCode");
   const memberForm = document.querySelector("#memberForm");
   const memberList = document.querySelector("#memberList");
-  const createInviteCode = document.querySelector("#createInviteCode");
+  const inviteForm = document.querySelector("#inviteForm");
 
-  phoneChangeForm.addEventListener("submit", async (event) => {
+  requestEmailChangeCode?.addEventListener("click", async () => {
+    const newEmail = normalizeEmail(emailChangeForm.elements.newEmail.value);
+    if (!newEmail) {
+      setFormStatus("#accountSettingsStatus", "새 이메일 주소를 정확히 입력해 주세요.", "error");
+      return;
+    }
+    try {
+      await apiRequest("/api/auth/send-code", {
+        method: "POST",
+        body: { email: newEmail, purpose: "change-email" }
+      });
+      setFormStatus("#accountSettingsStatus", "인증번호를 새 이메일로 보냈습니다.", "success");
+      emailChangeForm.elements.verificationCode.focus();
+    } catch (error) {
+      setFormStatus("#accountSettingsStatus", error.message, "error");
+    }
+  });
+
+  emailChangeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(phoneChangeForm);
-    const oldPhone = currentUserPhone || state.auth?.phone;
-    const newPhone = normalizePhone(form.get("newPhone"));
+    const form = new FormData(emailChangeForm);
+    const oldEmail = currentUserEmail || state.auth?.email;
+    const newEmail = normalizeEmail(form.get("newEmail"));
     const password = String(form.get("currentPassword") || "");
+    const verificationCode = String(form.get("verificationCode") || "").replace(/[^\d]/g, "");
 
-    if (!oldPhone) {
+    if (!oldEmail) {
       setFormStatus("#accountSettingsStatus", "현재 로그인 정보를 찾을 수 없습니다.", "error");
       return;
     }
 
-    if (!newPhone || newPhone.length < 10) {
-      setFormStatus("#accountSettingsStatus", "새 전화번호를 정확히 입력해 주세요.", "error");
+    if (!newEmail) {
+      setFormStatus("#accountSettingsStatus", "새 이메일 주소를 정확히 입력해 주세요.", "error");
       return;
     }
 
-    if (newPhone === oldPhone) {
-      setFormStatus("#accountSettingsStatus", "현재 전화번호와 같습니다.", "error");
+    if (newEmail === oldEmail) {
+      setFormStatus("#accountSettingsStatus", "현재 이메일과 같습니다.", "error");
       return;
     }
 
     try {
-      const result = await apiRequest("/api/account/change-phone", {
+      const result = await apiRequest("/api/account/change-email", {
         method: "POST",
-        body: { newPhone, password }
+        body: { newEmail, password, verificationCode }
       });
-      currentUserPhone = result.account.phone;
+      currentUserEmail = result.account.email;
       currentLedgerId = result.ledgerId;
-      state.auth = { phone: currentUserPhone };
-      sessionStorage.setItem(SESSION_KEY, currentUserPhone);
+      state.auth = { email: currentUserEmail };
+      sessionStorage.setItem(SESSION_KEY, currentUserEmail);
       sessionStorage.setItem(SESSION_LEDGER_KEY, currentLedgerId);
-      localStorage.removeItem(userStorageKey(oldPhone));
+      localStorage.removeItem(userStorageKey(oldEmail));
       persist();
-      phoneChangeForm.reset();
+      emailChangeForm.reset();
       renderAccountSettings();
-      setFormStatus("#accountSettingsStatus", "전화번호가 변경되었습니다.", "success");
+      setFormStatus("#accountSettingsStatus", "이메일이 변경되었습니다.", "success");
     } catch (error) {
       setFormStatus("#accountSettingsStatus", error.message, "error");
     }
@@ -874,21 +964,33 @@ function initAccountControls() {
     renderTransactions();
   });
 
-  createInviteCode.addEventListener("click", async () => {
+  inviteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
     ensureAuthorMembers();
+    const form = new FormData(inviteForm);
+    const invitedEmail = normalizeEmail(form.get("inviteEmail"));
+    const memberName = String(form.get("memberName") || "").trim();
+    if (!invitedEmail) {
+      document.querySelector("#inviteCodeResult").innerHTML = `<small>초대받을 이메일 주소를 정확히 입력해 주세요.</small>`;
+      return;
+    }
+
     try {
       await flushPersist();
       const result = await apiRequest("/api/invites", {
         method: "POST",
         body: {
+          invitedEmail,
           inviter: defaultAuthorName(),
-          memberName: ""
+          memberName
         }
       });
+      inviteForm.reset();
       document.querySelector("#inviteCodeResult").innerHTML = `
-        <span>초대 코드</span>
+        <span>초대 메일을 보냈습니다</span>
         <strong>${escapeHtml(result.code)}</strong>
-        <small>초대받은 사람이 로그인할 때 이 코드를 입력하면 같은 가계부를 사용합니다.</small>
+        <small>${escapeHtml(invitedEmail)}로 초대 링크를 보냈습니다. 직접 전달할 때는 위 초대 코드를 알려주세요.</small>
+        ${result.inviteLink ? `<a class="text-button" href="${escapeHtml(result.inviteLink)}" target="_blank" rel="noreferrer">초대 링크 열기</a>` : ""}
       `;
     } catch (error) {
       document.querySelector("#inviteCodeResult").innerHTML = `<small>${escapeHtml(error.message)}</small>`;
@@ -900,16 +1002,41 @@ function initPasswordResetControls() {
   const passwordResetModal = document.querySelector("#passwordResetModal");
   const passwordResetForm = document.querySelector("#passwordResetForm");
   const cancelPasswordReset = document.querySelector("#cancelPasswordReset");
+  const requestPasswordResetCode = document.querySelector("#requestPasswordResetCode");
+
+  requestPasswordResetCode?.addEventListener("click", async () => {
+    const email = normalizeEmail(passwordResetForm.elements.email.value);
+    if (!email) {
+      setFormStatus("#passwordResetStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
+      return;
+    }
+    try {
+      await apiRequest("/api/auth/send-code", {
+        method: "POST",
+        body: { email, purpose: "reset" }
+      });
+      setFormStatus("#passwordResetStatus", "인증번호를 이메일로 보냈습니다.", "success");
+      passwordResetForm.elements.verificationCode.focus();
+    } catch (error) {
+      setFormStatus("#passwordResetStatus", error.message, "error");
+    }
+  });
 
   passwordResetForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(passwordResetForm);
-    const phone = normalizePhone(form.get("phone"));
+    const email = normalizeEmail(form.get("email"));
+    const verificationCode = String(form.get("verificationCode") || "").replace(/[^\d]/g, "");
     const newPassword = String(form.get("newPassword") || "");
     const confirmPassword = String(form.get("confirmPassword") || "");
 
-    if (newPassword.length < 4) {
-      setFormStatus("#passwordResetStatus", "비밀번호는 4자 이상으로 입력해 주세요.", "error");
+    if (!email) {
+      setFormStatus("#passwordResetStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
+      return;
+    }
+
+    if (!validatePasswordValue(newPassword)) {
+      setFormStatus("#passwordResetStatus", "비밀번호는 8자 이상으로 입력해 주세요.", "error");
       return;
     }
 
@@ -921,10 +1048,10 @@ function initPasswordResetControls() {
     try {
       await apiRequest("/api/account/reset-password", {
         method: "POST",
-        body: { phone, newPassword }
+        body: { email, verificationCode, newPassword, confirmPassword }
       });
-      if (currentUserPhone === phone) {
-        state.auth = { phone };
+      if (currentUserEmail === email) {
+        state.auth = { email };
         persist();
       }
       closePasswordResetModal();
@@ -940,15 +1067,14 @@ function initPasswordResetControls() {
   });
 }
 
-function openPasswordResetModal(phone = "") {
+function openPasswordResetModal(email = "") {
   const modal = document.querySelector("#passwordResetModal");
   const form = document.querySelector("#passwordResetForm");
-  const digits = normalizePhone(phone);
   form.reset();
-  form.elements.phone.value = digits ? displayPhone(digits) : "";
+  form.elements.email.value = displayEmail(email) === "-" ? "" : displayEmail(email);
   setFormStatus("#passwordResetStatus");
   modal.hidden = false;
-  form.elements.phone.focus();
+  form.elements.email.focus();
 }
 
 function closePasswordResetModal() {

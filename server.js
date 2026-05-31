@@ -4,6 +4,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const XLSX = require("xlsx");
 const { Pool } = require("pg");
+const nodemailer = require("nodemailer");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 5173);
@@ -11,6 +12,8 @@ const databaseUrl = process.env.DATABASE_URL || "postgres://finance:finance@loca
 const cache = new Map();
 const cacheTtlMs = 1000 * 60 * 60;
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
+const verificationTtlMs = 1000 * 60 * 10;
+const passwordMinLength = 8;
 let dbReadyPromise = null;
 const pool = new Pool({
   connectionString: databaseUrl,
@@ -106,12 +109,24 @@ async function getDb() {
   if (!dbReadyPromise) {
     dbReadyPromise = pool.query(`
       CREATE TABLE IF NOT EXISTS accounts (
-        phone TEXT PRIMARY KEY,
+        email TEXT PRIMARY KEY,
         password TEXT NOT NULL,
         ledger_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'accounts' AND column_name = 'phone'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'accounts' AND column_name = 'email'
+        ) THEN
+          ALTER TABLE accounts RENAME COLUMN phone TO email;
+        END IF;
+      END $$;
       CREATE TABLE IF NOT EXISTS ledgers (
         id TEXT PRIMARY KEY,
         state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -122,20 +137,45 @@ async function getDb() {
         code TEXT PRIMARY KEY,
         ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
         member_name TEXT,
+        invited_email TEXT,
         inviter TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE invites ADD COLUMN IF NOT EXISTS invited_email TEXT;
       CREATE TABLE IF NOT EXISTS sessions (
         token TEXT PRIMARY KEY,
-        phone TEXT NOT NULL REFERENCES accounts(phone) ON UPDATE CASCADE ON DELETE CASCADE,
+        email TEXT NOT NULL REFERENCES accounts(email) ON UPDATE CASCADE ON DELETE CASCADE,
         ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         expires_at TIMESTAMPTZ NOT NULL
       );
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'sessions' AND column_name = 'phone'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'sessions' AND column_name = 'email'
+        ) THEN
+          ALTER TABLE sessions RENAME COLUMN phone TO email;
+        END IF;
+      END $$;
+      CREATE TABLE IF NOT EXISTS email_verifications (
+        email TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        verified_at TIMESTAMPTZ,
+        PRIMARY KEY (email, purpose)
+      );
       CREATE INDEX IF NOT EXISTS idx_accounts_ledger_id ON accounts(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_invites_ledger_id ON invites(ledger_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_phone ON sessions(phone);
+      CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(email);
       CREATE INDEX IF NOT EXISTS idx_sessions_ledger_id ON sessions(ledger_id);
+      CREATE INDEX IF NOT EXISTS idx_email_verifications_expires_at ON email_verifications(expires_at);
     `).then(() => pool).catch((error) => {
       dbReadyPromise = null;
       throw error;
@@ -144,13 +184,13 @@ async function getDb() {
   return dbReadyPromise;
 }
 
-async function getAccount(db, phone) {
-  const result = await db.query("SELECT phone, password, ledger_id AS \"ledgerId\" FROM accounts WHERE phone = $1", [phone]);
+async function getAccount(db, email) {
+  const result = await db.query('SELECT email, password, ledger_id AS "ledgerId" FROM accounts WHERE email = $1', [email]);
   return result.rows[0] || null;
 }
 
 async function getInvite(db, code) {
-  const result = await db.query('SELECT code, ledger_id AS "ledgerId", member_name AS "memberName", inviter FROM invites WHERE code = $1', [code]);
+  const result = await db.query('SELECT code, ledger_id AS "ledgerId", member_name AS "memberName", invited_email AS "invitedEmail", inviter FROM invites WHERE code = $1', [code]);
   return result.rows[0] || null;
 }
 
@@ -172,7 +212,7 @@ async function saveLedgerState(db, ledgerId, state) {
 }
 
 function publicAccount(account) {
-  return account ? { phone: account.phone, ledgerId: account.ledgerId } : null;
+  return account ? { email: account.email, ledgerId: account.ledgerId } : null;
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
@@ -197,12 +237,153 @@ function isHashedPassword(storedPassword) {
   return String(storedPassword || "").startsWith("pbkdf2$");
 }
 
+function normalizeVerificationPurpose(value) {
+  return ["signup", "reset", "change-email"].includes(value) ? value : "signup";
+}
+
+function createVerificationCode() {
+  return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+}
+
+function verificationCodeHash(email, purpose, code) {
+  const secret = process.env.AUTH_CODE_SECRET || databaseUrl;
+  return crypto.createHash("sha256").update(`${email}:${purpose}:${code}:${secret}`).digest("hex");
+}
+
+function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
+}
+
+function smtpTransport() {
+  const auth = process.env.SMTP_USER && process.env.SMTP_PASS ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth
+  });
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function appBaseUrl(req) {
+  const configured = String(process.env.PUBLIC_APP_URL || "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").trim();
+  if (!host) return "";
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || (host.includes("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  return `${protocol}://${host}`;
+}
+
+async function sendVerificationEmail(email, code, purpose) {
+  if (!smtpConfigured()) {
+    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+  }
+
+  const title = purpose === "reset" ? "비밀번호 재설정 인증번호" : purpose === "change-email" ? "이메일 변경 인증번호" : "회원가입 인증번호";
+  await smtpTransport().sendMail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: `[Cashnote] ${title}`,
+    text: `Cashnote ${title}는 ${code} 입니다. 10분 안에 입력해 주세요.`,
+    html: `<p>Cashnote ${title}는 <strong>${code}</strong> 입니다.</p><p>10분 안에 입력해 주세요.</p>`
+  });
+}
+
+async function sendInviteEmail(email, { code, inviteLink, inviter, memberName }) {
+  if (!smtpConfigured()) {
+    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+  }
+
+  const inviterName = String(inviter || "Cashnote 사용자").trim();
+  const displayMember = String(memberName || "").trim();
+  const targetText = displayMember ? `${displayMember}님을` : "사용자를";
+  const text = [
+    `${inviterName}님이 Cashnote 가계부에 ${targetText} 초대했습니다.`,
+    "",
+    `초대 코드: ${code}`,
+    inviteLink ? `초대 링크: ${inviteLink}` : "",
+    "",
+    "링크로 접속하거나 로그인 화면에서 초대 코드를 입력하면 같은 가계부에 참여할 수 있습니다."
+  ].filter(Boolean).join("\n");
+
+  await smtpTransport().sendMail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: "[Cashnote] 가계부 초대가 도착했습니다",
+    text,
+    html: `
+      <p>${escapeHtml(inviterName)}님이 Cashnote 가계부에 ${escapeHtml(targetText)} 초대했습니다.</p>
+      <p><strong>초대 코드: ${escapeHtml(code)}</strong></p>
+      ${inviteLink ? `<p><a href="${escapeHtml(inviteLink)}">초대 링크로 열기</a></p>` : ""}
+      <p>링크로 접속하거나 로그인 화면에서 초대 코드를 입력하면 같은 가계부에 참여할 수 있습니다.</p>
+    `
+  });
+}
+
+async function createEmailVerification(db, email, purpose) {
+  if (!smtpConfigured()) {
+    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+  }
+
+  const code = createVerificationCode();
+  const expiresAt = new Date(Date.now() + verificationTtlMs).toISOString();
+  await db.query(
+    `
+      INSERT INTO email_verifications (email, purpose, code_hash, attempts, created_at, expires_at, verified_at)
+      VALUES ($1, $2, $3, 0, NOW(), $4, NULL)
+      ON CONFLICT (email, purpose)
+      DO UPDATE SET code_hash = EXCLUDED.code_hash, attempts = 0, created_at = NOW(), expires_at = EXCLUDED.expires_at, verified_at = NULL
+    `,
+    [email, purpose, verificationCodeHash(email, purpose, code), expiresAt]
+  );
+
+  await sendVerificationEmail(email, code, purpose);
+  return code;
+}
+
+function safeEqualHex(left, right) {
+  const leftBuffer = Buffer.from(left || "", "hex");
+  const rightBuffer = Buffer.from(right || "", "hex");
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+async function verifyEmailCode(db, email, purpose, code) {
+  const verificationCode = String(code || "").replace(/[^\d]/g, "");
+  if (!verificationCode) return false;
+
+  const result = await db.query(
+    'SELECT code_hash AS "codeHash", attempts, expires_at AS "expiresAt" FROM email_verifications WHERE email = $1 AND purpose = $2',
+    [email, purpose]
+  );
+  const row = result.rows[0];
+  if (!row || Number(row.attempts) >= 5 || new Date(row.expiresAt).getTime() < Date.now()) return false;
+
+  const ok = safeEqualHex(row.codeHash, verificationCodeHash(email, purpose, verificationCode));
+  if (!ok) {
+    await db.query("UPDATE email_verifications SET attempts = attempts + 1 WHERE email = $1 AND purpose = $2", [email, purpose]);
+    return false;
+  }
+
+  await db.query("UPDATE email_verifications SET verified_at = NOW() WHERE email = $1 AND purpose = $2", [email, purpose]);
+  return true;
+}
+
 async function createSession(db, account) {
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
-  await db.query("INSERT INTO sessions (token, phone, ledger_id, created_at, expires_at) VALUES ($1, $2, $3, NOW(), $4)", [
+  await db.query("INSERT INTO sessions (token, email, ledger_id, created_at, expires_at) VALUES ($1, $2, $3, NOW(), $4)", [
     token,
-    account.phone,
+    account.email,
     account.ledgerId,
     expiresAt
   ]);
@@ -221,9 +402,9 @@ async function getSession(db, req) {
 
   const result = await db.query(
     `
-      SELECT s.token, s.phone, s.ledger_id AS "ledgerId", a.password
+      SELECT s.token, s.email, s.ledger_id AS "ledgerId", a.password
       FROM sessions s
-      JOIN accounts a ON a.phone = s.phone
+      JOIN accounts a ON a.email = s.email
       WHERE s.token = $1 AND s.expires_at > NOW()
     `,
     [token]
@@ -231,8 +412,16 @@ async function getSession(db, req) {
   return result.rows[0] || null;
 }
 
-function normalizePhone(value) {
-  return String(value || "").replace(/[^\d]/g, "");
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function validatePassword(password) {
+  if (String(password || "").length < passwordMinLength) {
+    return `비밀번호는 ${passwordMinLength}자 이상으로 입력해 주세요.`;
+  }
+  return "";
 }
 
 function normalizeInviteCode(value) {
@@ -449,16 +638,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === "/api/auth/send-code" && req.method === "POST") {
+    try {
+      const body = await readJsonBody(req);
+      const email = normalizeEmail(body.email);
+      const purpose = normalizeVerificationPurpose(body.purpose);
+      const db = await getDb();
+
+      if (!email) {
+        sendJson(res, 400, { error: "이메일 주소를 정확히 입력해 주세요." });
+        return;
+      }
+
+      const account = await getAccount(db, email);
+      if (purpose === "signup" && account) {
+        sendJson(res, 409, { error: "이미 가입된 이메일입니다. 로그인해 주세요." });
+        return;
+      }
+      if (purpose === "reset" && !account) {
+        sendJson(res, 404, { error: "등록된 이메일을 찾을 수 없습니다." });
+        return;
+      }
+      if (purpose === "change-email") {
+        const session = await getSession(db, req);
+        if (!session) {
+          sendJson(res, 401, { error: "로그인이 필요합니다." });
+          return;
+        }
+        if (session.email === email) {
+          sendJson(res, 400, { error: "현재 이메일과 같습니다." });
+          return;
+        }
+        if (account) {
+          sendJson(res, 409, { error: "이미 등록된 이메일입니다." });
+          return;
+        }
+      }
+
+      await createEmailVerification(db, email, purpose);
+      sendJson(res, 200, { ok: true, expiresInMinutes: 10 });
+    } catch (error) {
+      sendJson(res, smtpConfigured() ? 500 : 503, { error: error.message || "인증번호를 발송하지 못했습니다." });
+    }
+    return;
+  }
+
   if (pathname === "/api/auth/login" && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
-      const phone = normalizePhone(body.phone);
+      const email = normalizeEmail(body.email);
       const password = String(body.password || "");
+      const confirmPassword = String(body.confirmPassword || "");
+      const verificationCode = String(body.verificationCode || "");
       const inviteCode = normalizeInviteCode(body.inviteCode);
       const db = await getDb();
 
-      if (!phone || !password) {
-        sendJson(res, 400, { error: "전화번호와 비밀번호를 입력해 주세요." });
+      if (!email || !password) {
+        sendJson(res, 400, { error: "이메일과 비밀번호를 입력해 주세요." });
         return;
       }
 
@@ -468,40 +704,57 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      let account = await getAccount(db, phone);
+      let account = await getAccount(db, email);
       if (account && !verifyPassword(password, account.password)) {
-        sendJson(res, 401, { error: "전화번호 또는 비밀번호가 맞지 않습니다." });
+        sendJson(res, 401, { error: "이메일 또는 비밀번호가 맞지 않습니다." });
         return;
       }
       if (account && invite && account.ledgerId && account.ledgerId !== invite.ledgerId) {
-        sendJson(res, 409, { error: "이미 다른 가계부에 연결된 계정입니다. 새 전화번호로 초대에 참여해 주세요." });
+        sendJson(res, 409, { error: "이미 다른 가계부에 연결된 계정입니다. 새 이메일로 초대에 참여해 주세요." });
         return;
       }
 
       const now = new Date().toISOString();
       const ledgerId = account?.ledgerId || invite?.ledgerId || createId("ledger");
       if (!account) {
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+          sendJson(res, 400, { error: passwordError });
+          return;
+        }
+        if (password !== confirmPassword) {
+          sendJson(res, 400, { error: "비밀번호 확인이 서로 다릅니다.", requiresVerification: true });
+          return;
+        }
+        if (!verificationCode) {
+          sendJson(res, 428, { error: "처음 가입하는 이메일입니다. 이메일 인증번호를 받아 입력해 주세요.", requiresVerification: true });
+          return;
+        }
+        if (!(await verifyEmailCode(db, email, "signup", verificationCode))) {
+          sendJson(res, 400, { error: "이메일 인증번호가 맞지 않거나 만료되었습니다.", requiresVerification: true });
+          return;
+        }
         const passwordHash = hashPassword(password);
-        await db.query("INSERT INTO accounts (phone, password, ledger_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)", [
-          phone,
+        await db.query("INSERT INTO accounts (email, password, ledger_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)", [
+          email,
           passwordHash,
           ledgerId,
           now,
           now
         ]);
-        account = { phone, password: passwordHash, ledgerId };
+        account = { email, password: passwordHash, ledgerId };
       } else if (!account.ledgerId) {
-        await db.query("UPDATE accounts SET ledger_id = $1, updated_at = $2 WHERE phone = $3", [ledgerId, now, phone]);
+        await db.query("UPDATE accounts SET ledger_id = $1, updated_at = $2 WHERE email = $3", [ledgerId, now, email]);
         account = { ...account, ledgerId };
       } else if (!isHashedPassword(account.password)) {
-        await db.query("UPDATE accounts SET password = $1, updated_at = $2 WHERE phone = $3", [hashPassword(password), now, phone]);
+        await db.query("UPDATE accounts SET password = $1, updated_at = $2 WHERE email = $3", [hashPassword(password), now, email]);
       }
 
       let state = (await getLedgerState(db, ledgerId)) || body.initialState || {};
       if (invite) {
-        state = addInviteMember(state, invite.memberName || phone);
+        state = addInviteMember(state, invite.memberName || email);
       }
-      state = { ...state, auth: { phone } };
+      state = { ...state, auth: { email } };
       await saveLedgerState(db, ledgerId, state);
       sendJson(res, 200, { account: publicAccount(account), ledgerId, sessionToken: await createSession(db, { ...account, ledgerId }), state });
     } catch (error) {
@@ -518,7 +771,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 401, { error: "로그인이 필요합니다." });
         return;
       }
-      const account = { phone: session.phone, ledgerId: session.ledgerId };
+      const account = { email: session.email, ledgerId: session.ledgerId };
       sendJson(res, 200, { account: publicAccount(account), ledgerId: account.ledgerId, state: await getLedgerState(db, account.ledgerId) });
     } catch (error) {
       sendJson(res, 500, { error: "가계부 데이터를 불러오지 못했습니다.", detail: error.message });
@@ -535,7 +788,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 403, { error: "가계부 저장 권한이 없습니다." });
         return;
       }
-      await saveLedgerState(db, session.ledgerId, { ...(body.state || {}), auth: { phone: session.phone } });
+      await saveLedgerState(db, session.ledgerId, { ...(body.state || {}), auth: { email: session.email } });
       sendJson(res, 200, { ok: true });
     } catch (error) {
       sendJson(res, 500, { error: "가계부 데이터를 저장하지 못했습니다.", detail: error.message });
@@ -543,34 +796,43 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === "/api/account/change-phone" && req.method === "POST") {
+  if (pathname === "/api/account/change-email" && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
-      const newPhone = normalizePhone(body.newPhone);
+      const newEmail = normalizeEmail(body.newEmail);
       const password = String(body.password || "");
+      const verificationCode = String(body.verificationCode || "");
       const db = await getDb();
       const session = await getSession(db, req);
-      const account = session ? await getAccount(db, session.phone) : null;
+      const account = session ? await getAccount(db, session.email) : null;
 
       if (!account || !verifyPassword(password, account.password)) {
         sendJson(res, 401, { error: "현재 비밀번호가 맞지 않습니다." });
         return;
       }
-      if (!newPhone || newPhone.length < 10) {
-        sendJson(res, 400, { error: "새 전화번호를 정확히 입력해 주세요." });
+      if (!newEmail) {
+        sendJson(res, 400, { error: "새 이메일 주소를 정확히 입력해 주세요." });
         return;
       }
-      if (await getAccount(db, newPhone)) {
-        sendJson(res, 409, { error: "이미 등록된 전화번호입니다." });
+      if (newEmail === session.email) {
+        sendJson(res, 400, { error: "현재 이메일과 같습니다." });
+        return;
+      }
+      if (await getAccount(db, newEmail)) {
+        sendJson(res, 409, { error: "이미 등록된 이메일입니다." });
+        return;
+      }
+      if (!(await verifyEmailCode(db, newEmail, "change-email", verificationCode))) {
+        sendJson(res, 400, { error: "이메일 인증번호가 맞지 않거나 만료되었습니다." });
         return;
       }
 
-      await db.query("UPDATE accounts SET phone = $1, updated_at = $2 WHERE phone = $3", [newPhone, new Date().toISOString(), session.phone]);
+      await db.query("UPDATE accounts SET email = $1, updated_at = $2 WHERE email = $3", [newEmail, new Date().toISOString(), session.email]);
       const state = (await getLedgerState(db, account.ledgerId)) || {};
-      await saveLedgerState(db, account.ledgerId, { ...state, auth: { phone: newPhone } });
-      sendJson(res, 200, { account: { phone: newPhone, ledgerId: account.ledgerId }, ledgerId: account.ledgerId });
+      await saveLedgerState(db, account.ledgerId, { ...state, auth: { email: newEmail } });
+      sendJson(res, 200, { account: { email: newEmail, ledgerId: account.ledgerId }, ledgerId: account.ledgerId });
     } catch (error) {
-      sendJson(res, 500, { error: "전화번호를 변경하지 못했습니다.", detail: error.message });
+      sendJson(res, 500, { error: "이메일을 변경하지 못했습니다.", detail: error.message });
     }
     return;
   }
@@ -578,23 +840,34 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/api/account/reset-password" && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
-      const phone = normalizePhone(body.phone);
+      const email = normalizeEmail(body.email);
       const newPassword = String(body.newPassword || "");
+      const confirmPassword = String(body.confirmPassword || "");
+      const verificationCode = String(body.verificationCode || "");
       const db = await getDb();
-      const account = await getAccount(db, phone);
+      const account = await getAccount(db, email);
 
       if (!account) {
-        sendJson(res, 404, { error: "등록된 전화번호를 찾을 수 없습니다." });
+        sendJson(res, 404, { error: "등록된 이메일을 찾을 수 없습니다." });
         return;
       }
-      if (newPassword.length < 4) {
-        sendJson(res, 400, { error: "비밀번호는 4자 이상으로 입력해 주세요." });
+      const passwordError = validatePassword(newPassword);
+      if (passwordError) {
+        sendJson(res, 400, { error: passwordError });
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        sendJson(res, 400, { error: "새 비밀번호가 서로 다릅니다." });
+        return;
+      }
+      if (!(await verifyEmailCode(db, email, "reset", verificationCode))) {
+        sendJson(res, 400, { error: "이메일 인증번호가 맞지 않거나 만료되었습니다." });
         return;
       }
 
-      await db.query("UPDATE accounts SET password = $1, updated_at = $2 WHERE phone = $3", [hashPassword(newPassword), new Date().toISOString(), phone]);
+      await db.query("UPDATE accounts SET password = $1, updated_at = $2 WHERE email = $3", [hashPassword(newPassword), new Date().toISOString(), email]);
       const state = (await getLedgerState(db, account.ledgerId)) || {};
-      await saveLedgerState(db, account.ledgerId, { ...state, auth: { phone } });
+      await saveLedgerState(db, account.ledgerId, { ...state, auth: { email } });
       sendJson(res, 200, { ok: true });
     } catch (error) {
       sendJson(res, 500, { error: "비밀번호를 변경하지 못했습니다.", detail: error.message });
@@ -613,16 +886,30 @@ const server = http.createServer(async (req, res) => {
       }
 
       const code = normalizeInviteCode(Math.random().toString(36).slice(2, 8));
-      await db.query("INSERT INTO invites (code, ledger_id, member_name, inviter, created_at) VALUES ($1, $2, $3, $4, $5)", [
+      const invitedEmail = normalizeEmail(body.invitedEmail || body.email);
+      const memberName = String(body.memberName || "").trim();
+      const inviter = String(body.inviter || "").trim();
+      if ((body.invitedEmail || body.email) && !invitedEmail) {
+        sendJson(res, 400, { error: "초대받을 이메일 주소를 정확히 입력해 주세요." });
+        return;
+      }
+
+      const baseUrl = appBaseUrl(req);
+      const inviteLink = baseUrl ? `${baseUrl}/?invite=${encodeURIComponent(code)}` : "";
+      await db.query("INSERT INTO invites (code, ledger_id, member_name, invited_email, inviter, created_at) VALUES ($1, $2, $3, $4, $5, $6)", [
         code,
         session.ledgerId,
-        String(body.memberName || ""),
-        String(body.inviter || ""),
+        memberName,
+        invitedEmail || null,
+        inviter,
         new Date().toISOString()
       ]);
-      sendJson(res, 200, { code, ledgerId: session.ledgerId });
+      if (invitedEmail) {
+        await sendInviteEmail(invitedEmail, { code, inviteLink, inviter, memberName });
+      }
+      sendJson(res, 200, { code, ledgerId: session.ledgerId, inviteLink, emailSent: Boolean(invitedEmail) });
     } catch (error) {
-      sendJson(res, 500, { error: "초대 코드를 만들지 못했습니다.", detail: error.message });
+      sendJson(res, smtpConfigured() ? 500 : 503, { error: "초대 메일을 보내지 못했습니다.", detail: error.message });
     }
     return;
   }
