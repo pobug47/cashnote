@@ -53,7 +53,7 @@ Copy-Item .env.production.example .env
 관리자 공지 기능을 사용하려면 관리자 계정 이메일을 쉼표로 구분해 `ADMIN_EMAILS`에 입력합니다.
 
 ```text
-ADMIN_EMAILS=owner@example.com
+ADMIN_EMAILS=
 ```
 
 ```powershell
