@@ -212,6 +212,47 @@ button {
   font-size: 13px;
 }
 
+.ledger-scope-switch {
+  display: grid;
+  gap: 8px;
+}
+
+.ledger-scope-button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #d8e8dd;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ledger-scope-button strong,
+.ledger-scope-button span {
+  display: block;
+}
+
+.ledger-scope-button span {
+  color: #b7c8be;
+  font-size: 12px;
+}
+
+.ledger-scope-button.active {
+  color: var(--theme-dark);
+  background: var(--theme-accent);
+}
+
+.ledger-scope-button.active span {
+  color: rgba(var(--theme-dark-rgb), 0.72);
+}
+
+.ledger-scope-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .nav-list {
   display: grid;
   gap: 8px;

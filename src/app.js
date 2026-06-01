@@ -34,6 +34,7 @@ const sampleData = {
   selectedTransactionId: null,
   selectedCategory: "전체",
   selectedTransactionType: "all",
+  selectedLedgerScope: "personal",
   selectedCalendarDate: null,
   transactionViewMode: "list",
   selectedSecurityId: null,
@@ -245,6 +246,24 @@ function currentAuthorName() {
   return mapped || defaultAuthorName();
 }
 
+function hasSharedLedger() {
+  return uniqueNames(state.householdMembers).length > 1;
+}
+
+function ledgerScope() {
+  return state.selectedLedgerScope === "shared" && hasSharedLedger() ? "shared" : "personal";
+}
+
+function scopedTransactions(transactions = state.transactions) {
+  if (ledgerScope() === "shared") return transactions;
+  const author = currentAuthorName();
+  return transactions.filter((item) => authorName(item) === author);
+}
+
+function scopeLabel() {
+  return ledgerScope() === "shared" ? "공동 가계부" : "개인 가계부";
+}
+
 function createInitialStateForUser(email) {
   const next = structuredClone(sampleData);
   next.selectedMonth = currentMonthValue();
@@ -293,6 +312,7 @@ function loadState(email = currentUserEmail) {
       selectedTransactionId: parsed.selectedTransactionId || null,
       selectedCategory: parsed.selectedCategory || "전체",
       selectedTransactionType: isTransactionTypeFilter(parsed.selectedTransactionType) ? parsed.selectedTransactionType : "all",
+      selectedLedgerScope: isLedgerScope(parsed.selectedLedgerScope) ? parsed.selectedLedgerScope : "personal",
       selectedCalendarDate: isDateValue(parsed.selectedCalendarDate) ? parsed.selectedCalendarDate : null,
       transactionViewMode: parsed.transactionViewMode === "calendar" ? "calendar" : "list",
       selectedSecurityId: parsed.selectedSecurityId || null,
@@ -328,6 +348,10 @@ function isDateValue(value) {
 
 function isTransactionTypeFilter(value) {
   return ["all", "income", "expense", "saving"].includes(value);
+}
+
+function isLedgerScope(value) {
+  return ["personal", "shared"].includes(value);
 }
 
 function currentMonthValue() {
@@ -891,7 +915,7 @@ function renderProfile() {
   const settingsImageInitial = document.querySelector("#settingsProfileImageInitial");
   const savingsInsightText = document.querySelector("#savingsInsightText");
 
-  if (title) title.textContent = `${name}님의 월간 자산 흐름`;
+  if (title) title.textContent = `${name}님의 ${scopeLabel()} 흐름`;
   if (savingsInsightText) savingsInsightText.textContent = `${name}님은 지금까지 이만큼 저축/투자했어요.`;
   if (nameInput && document.activeElement !== nameInput && nameInput.value !== rawName) {
     nameInput.value = rawName;
@@ -908,6 +932,23 @@ function renderProfile() {
     if (image) settingsImagePreview.src = image;
     settingsImageInitial.textContent = name.slice(0, 1) || "₩";
   }
+}
+
+function renderLedgerScopeControls() {
+  const hasShared = hasSharedLedger();
+  if (!hasShared && state.selectedLedgerScope === "shared") {
+    state.selectedLedgerScope = "personal";
+  }
+
+  document.querySelectorAll("[data-ledger-scope]").forEach((button) => {
+    const active = button.dataset.ledgerScope === ledgerScope();
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    if (button.dataset.ledgerScope === "shared") {
+      button.disabled = !hasShared;
+      button.title = hasShared ? "가족 전체 거래를 봅니다." : "작성자를 초대하면 공동 가계부가 활성화됩니다.";
+    }
+  });
 }
 
 function showLoginScene(message = null) {
@@ -2089,7 +2130,7 @@ function goalCategory(goal) {
 }
 
 function goalProgress(goal, month = state.selectedMonth) {
-  const transactions = byMonth(state.transactions, month);
+  const transactions = byMonth(scopedTransactions(), month);
   const income = sum(transactions, (item) => item.type === "income");
   const expense = sum(transactions, (item) => item.type === "expense");
   const saving = sum(transactions, (item) => item.type === "saving");
@@ -2208,7 +2249,7 @@ function openGoalTarget(goal) {
   }
 
   if (goal.id === "saving-rate") {
-    const monthTransactions = byMonth(state.transactions, state.selectedMonth);
+    const monthTransactions = byMonth(scopedTransactions(), state.selectedMonth);
     const income = sum(monthTransactions, (item) => item.type === "income");
     const saving = sum(monthTransactions, (item) => item.type === "saving");
     const neededSaving = Math.max(0, income * (progress.target / 100) - saving);
@@ -2269,9 +2310,10 @@ function renderGoalProgressPanel(panelSelector, listSelector, hintSelector = nul
 }
 
 function renderDashboard() {
-  const monthTransactions = byMonth(state.transactions, state.selectedMonth);
+  const scopeTransactions = scopedTransactions();
+  const monthTransactions = byMonth(scopeTransactions, state.selectedMonth);
   const previousMonth = addMonths(state.selectedMonth, -1);
-  const previousTransactions = byMonth(state.transactions, previousMonth);
+  const previousTransactions = byMonth(scopeTransactions, previousMonth);
 
   const income = sum(monthTransactions, (item) => item.type === "income");
   const expense = sum(monthTransactions, (item) => item.type === "expense");
@@ -2348,7 +2390,7 @@ function renderAuthorStats(monthTransactions) {
   const container = document.querySelector("#authorStats");
   if (!container) return;
 
-  if (uniqueNames(state.householdMembers).length < 2) {
+  if (uniqueNames(state.householdMembers).length < 2 || ledgerScope() === "personal") {
     if (panel) panel.hidden = true;
     container.innerHTML = "";
     return;
@@ -2433,7 +2475,7 @@ function selectedTypeLabel() {
 }
 
 function renderTransactions() {
-  const monthTransactions = byMonth(state.transactions, state.selectedMonth).sort((a, b) => b.date.localeCompare(a.date));
+  const monthTransactions = byMonth(scopedTransactions(), state.selectedMonth).sort((a, b) => b.date.localeCompare(a.date));
   const typeFilteredTransactions = filteredTransactionsByType(monthTransactions);
   const selectedExists = monthTransactions.some((item) => item.id === state.selectedTransactionId);
   const mode = state.transactionViewMode === "calendar" ? "calendar" : "list";
@@ -2454,8 +2496,8 @@ function renderTransactions() {
   document.querySelector("#transactionCount").textContent = `${visibleTransactions.length}건`;
   document.querySelector("#transactionListHint").textContent =
     state.selectedCategory === "전체"
-      ? `${selectedTypeLabel()} 거래를 보고 있어요.`
-      : `${selectedTypeLabel()} · ${state.selectedCategory} 항목을 보고 있어요.`;
+      ? `${scopeLabel()}의 ${selectedTypeLabel()} 거래를 보고 있어요.`
+      : `${scopeLabel()}의 ${selectedTypeLabel()} · ${state.selectedCategory} 항목을 보고 있어요.`;
   renderCategoryFilters(typeFilteredTransactions);
   renderTransactionCalendar(typeFilteredTransactions);
   renderRegisteredHistory(typeFilteredTransactions);
@@ -2894,10 +2936,11 @@ function renderSecurityProjectionItem(security) {
 }
 
 function renderInsights() {
-  const monthTransactions = byMonth(state.transactions, state.selectedMonth);
-  const previousTransactions = byMonth(state.transactions, addMonths(state.selectedMonth, -1));
-  const lifetimeSaving = sum(state.transactions, (item) => item.type === "saving");
-  const lifetimeFood = sum(state.transactions, (item) => item.type === "expense" && item.category.includes("식비"));
+  const scopeTransactions = scopedTransactions();
+  const monthTransactions = byMonth(scopeTransactions, state.selectedMonth);
+  const previousTransactions = byMonth(scopeTransactions, addMonths(state.selectedMonth, -1));
+  const lifetimeSaving = sum(scopeTransactions, (item) => item.type === "saving");
+  const lifetimeFood = sum(scopeTransactions, (item) => item.type === "expense" && item.category.includes("식비"));
   const annualDividend = state.securities.reduce((total, item) => total + item.monthlyDividend * 12, 0);
   const income = sum(monthTransactions, (item) => item.type === "income");
   const expense = sum(monthTransactions, (item) => item.type === "expense");
@@ -2914,7 +2957,7 @@ function renderInsights() {
   const goalProgresses = activeGoalsForMonth().map((goal) => goalProgress(goal));
   const hasDividendOrInvestment =
     state.securities.length > 0 ||
-    state.transactions.some((item) => `${item.category} ${item.memo}`.includes("배당") || `${item.category} ${item.memo}`.includes("투자") || `${item.category} ${item.memo}`.includes("증권"));
+    scopeTransactions.some((item) => `${item.category} ${item.memo}`.includes("배당") || `${item.category} ${item.memo}`.includes("투자") || `${item.category} ${item.memo}`.includes("증권"));
 
   document.querySelector("#lifetimeSavings").textContent = formatKrw(lifetimeSaving);
   document.querySelector("#lifetimeFood").textContent = formatKrw(lifetimeFood);
@@ -3352,6 +3395,7 @@ function confirmPendingGoal() {
 }
 
 function render() {
+  renderLedgerScopeControls();
   renderTheme();
   renderProfile();
   renderAccountSettings();
@@ -3381,6 +3425,7 @@ function navigationSnapshot(view = currentView()) {
     selectedTransactionId: state.selectedTransactionId,
     selectedCategory: state.selectedCategory,
     selectedTransactionType: state.selectedTransactionType,
+    selectedLedgerScope: state.selectedLedgerScope,
     selectedCalendarDate: state.selectedCalendarDate,
     transactionViewMode: state.transactionViewMode,
     selectedSecurityId: state.selectedSecurityId,
@@ -3417,6 +3462,7 @@ function restoreNavigationState(snapshot) {
   state.selectedTransactionId = snapshot?.selectedTransactionId || null;
   state.selectedCategory = snapshot?.selectedCategory || "전체";
   state.selectedTransactionType = isTransactionTypeFilter(snapshot?.selectedTransactionType) ? snapshot.selectedTransactionType : "all";
+  state.selectedLedgerScope = isLedgerScope(snapshot?.selectedLedgerScope) ? snapshot.selectedLedgerScope : state.selectedLedgerScope || "personal";
   state.selectedCalendarDate = isDateValue(snapshot?.selectedCalendarDate) ? snapshot.selectedCalendarDate : null;
   state.transactionViewMode = snapshot?.transactionViewMode === "calendar" ? "calendar" : "list";
   state.selectedSecurityId = snapshot?.selectedSecurityId || null;
@@ -3714,6 +3760,23 @@ document.querySelectorAll("[data-view]").forEach((button) => {
     }
 
     setView(button.dataset.view);
+  });
+});
+
+document.querySelectorAll("[data-ledger-scope]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const nextScope = button.dataset.ledgerScope;
+    if (!isLedgerScope(nextScope)) return;
+    if (nextScope === "shared" && !hasSharedLedger()) return;
+
+    state.selectedLedgerScope = nextScope;
+    state.selectedTransactionId = null;
+    state.selectedCategory = "전체";
+    state.selectedTransactionType = "all";
+    state.selectedCalendarDate = null;
+    persist();
+    render();
+    writeNavigationHistory(currentView(), { replace: true });
   });
 });
 
