@@ -1412,6 +1412,14 @@ textarea {
   width: min(560px, 100%);
 }
 
+.info-modal {
+  width: min(460px, 100%);
+}
+
+.info-modal-icon {
+  background: var(--green);
+}
+
 .account-form {
   display: grid;
   gap: 14px;
@@ -1437,6 +1445,27 @@ textarea {
 .form-status {
   color: var(--muted);
   font-size: 13px;
+}
+
+.verification-countdown {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-accent);
+  border-radius: 8px;
+  color: var(--green);
+  background: var(--green-soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.verification-countdown.expired {
+  border-color: #e5b8b8;
+  color: #a83232;
+  background: #fff1f1;
 }
 
 .account-summary strong {

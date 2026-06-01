@@ -7,6 +7,7 @@ const SESSION_KEY = "finance-board-session";
 const SESSION_LEDGER_KEY = "finance-board-session-ledger";
 const SESSION_TOKEN_KEY = "finance-board-session-token";
 const NOTICE_DISMISS_PREFIX = "cashnote-dismissed-notices:";
+const VERIFICATION_TTL_SECONDS = 600;
 
 const sampleTransactions = [
   { date: "2025-10-01", type: "income", category: "급여", amount: 3200000, memo: "10월 급여" },
@@ -100,6 +101,7 @@ let editingNoticeId = null;
 let adminNotices = [];
 let adminNoticeRefreshPromise = null;
 let activeNoticeModalIds = [];
+const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
 const appViews = ["dashboard", "transactions", "investments", "insights", "settings", "admin"];
@@ -518,6 +520,98 @@ function setFormStatus(selector, message = "", type = "") {
   status.textContent = message;
   status.classList.toggle("success", type === "success");
   status.classList.toggle("error", type === "error");
+}
+
+function formatVerificationTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function clearVerificationCountdown(key) {
+  const saved = verificationCountdowns.get(key);
+  if (saved) {
+    clearInterval(saved.timer);
+    verificationCountdowns.delete(key);
+  }
+  document.querySelector(`[data-verification-countdown="${key}"]`)?.remove();
+}
+
+function startVerificationCountdown(key, anchor) {
+  clearVerificationCountdown(key);
+  const wrapper = anchor?.closest(".inline-field-actions");
+  if (!wrapper) return;
+
+  const countdown = document.createElement("p");
+  countdown.className = "verification-countdown";
+  countdown.dataset.verificationCountdown = key;
+  countdown.setAttribute("aria-live", "polite");
+  wrapper.insertAdjacentElement("afterend", countdown);
+
+  const expiresAt = Date.now() + VERIFICATION_TTL_SECONDS * 1000;
+  const update = () => {
+    const remainingSeconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    countdown.textContent = remainingSeconds
+      ? `인증번호 유효시간 ${formatVerificationTime(remainingSeconds)}`
+      : "인증번호 유효시간이 만료되었습니다. 다시 받아 주세요.";
+    countdown.classList.toggle("expired", remainingSeconds === 0);
+    if (remainingSeconds === 0) {
+      const saved = verificationCountdowns.get(key);
+      if (saved) clearInterval(saved.timer);
+      verificationCountdowns.delete(key);
+    }
+  };
+
+  update();
+  verificationCountdowns.set(key, { timer: setInterval(update, 1000) });
+}
+
+function showInfoModal({ title = "알림", message = "", buttonLabel = "확인" } = {}) {
+  let modal = document.querySelector("#infoModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "infoModal";
+    modal.className = "modal-backdrop";
+    modal.hidden = true;
+    modal.innerHTML = `
+      <section class="goal-modal info-modal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+        <div class="goal-modal-icon info-modal-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </div>
+        <div>
+          <span class="modal-eyebrow">인증 메일</span>
+          <h2 id="infoModalTitle"></h2>
+          <p id="infoModalMessage"></p>
+        </div>
+        <div class="modal-actions">
+          <button id="closeInfoModal" type="button" class="primary-button"></button>
+        </div>
+      </section>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener("click", (event) => {
+      if (event.target.id === "infoModal" || event.target.id === "closeInfoModal") {
+        modal.hidden = true;
+      }
+    });
+  }
+
+  modal.querySelector("#infoModalTitle").textContent = title;
+  modal.querySelector("#infoModalMessage").textContent = message;
+  modal.querySelector("#closeInfoModal").textContent = buttonLabel;
+  modal.hidden = false;
+  modal.querySelector("#closeInfoModal").focus();
+}
+
+function showVerificationSentFeedback(key, anchor, statusSelector) {
+  setFormStatus(statusSelector, "메일이 송신되었습니다. 10분 안에 인증번호를 입력해 주세요.", "success");
+  startVerificationCountdown(key, anchor);
+  showInfoModal({
+    title: "메일이 송신되었습니다.",
+    message: "입력한 이메일에서 인증번호를 확인한 뒤 10분 안에 입력해 주세요."
+  });
 }
 
 function isAuthenticated() {
@@ -1029,7 +1123,7 @@ function initAccountControls() {
         method: "POST",
         body: { email: newEmail, purpose: "change-email" }
       });
-      setFormStatus("#accountSettingsStatus", "인증번호를 새 이메일로 보냈습니다.", "success");
+      showVerificationSentFeedback("change-email", requestEmailChangeCode, "#accountSettingsStatus");
       emailChangeForm.elements.verificationCode.focus();
     } catch (error) {
       setFormStatus("#accountSettingsStatus", error.message, "error");
@@ -1073,6 +1167,7 @@ function initAccountControls() {
       localStorage.removeItem(userStorageKey(oldEmail));
       persist();
       emailChangeForm.reset();
+      clearVerificationCountdown("change-email");
       renderAdminAccess();
       renderAccountSettings();
       setFormStatus("#accountSettingsStatus", "이메일이 변경되었습니다.", "success");
@@ -1226,6 +1321,10 @@ function initAccountControls() {
         <small>${escapeHtml(invitedEmail)}로 초대 링크를 보냈습니다. 직접 전달할 때는 위 초대 코드를 알려주세요.</small>
         ${result.inviteLink ? `<a class="text-button" href="${escapeHtml(result.inviteLink)}" target="_blank" rel="noreferrer">초대 링크 열기</a>` : ""}
       `;
+      showInfoModal({
+        title: "초대 메일이 송신되었습니다.",
+        message: "초대받을 사람에게 초대 코드와 가입 링크를 보냈습니다."
+      });
     } catch (error) {
       document.querySelector("#inviteCodeResult").innerHTML = `<small>${escapeHtml(error.message)}</small>`;
     }
@@ -1306,7 +1405,7 @@ function initSignupControls() {
         method: "POST",
         body: { email, purpose: "signup" }
       });
-      setFormStatus("#signupStatus", "인증번호를 이메일로 보냈습니다. 10분 안에 입력해 주세요.", "success");
+      showVerificationSentFeedback("signup", requestSignupCode, "#signupStatus");
       signupForm.elements.verificationCode.focus();
     } catch (error) {
       setFormStatus("#signupStatus", error.message, "error");
@@ -1383,6 +1482,7 @@ function openSignupModal(email = "", inviteCode = "") {
 }
 
 function closeSignupModal() {
+  clearVerificationCountdown("signup");
   document.querySelector("#signupModal").hidden = true;
   document.querySelector("#signupForm").reset();
   setFormStatus("#signupStatus");
@@ -1405,7 +1505,7 @@ function initPasswordResetControls() {
         method: "POST",
         body: { email, purpose: "reset" }
       });
-      setFormStatus("#passwordResetStatus", "인증번호를 이메일로 보냈습니다.", "success");
+      showVerificationSentFeedback("reset", requestPasswordResetCode, "#passwordResetStatus");
       passwordResetForm.elements.verificationCode.focus();
     } catch (error) {
       setFormStatus("#passwordResetStatus", error.message, "error");
@@ -1468,6 +1568,7 @@ function openPasswordResetModal(email = "") {
 }
 
 function closePasswordResetModal() {
+  clearVerificationCountdown("reset");
   document.querySelector("#passwordResetModal").hidden = true;
   document.querySelector("#passwordResetForm").reset();
   setFormStatus("#passwordResetStatus");
