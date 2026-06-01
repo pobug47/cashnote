@@ -1429,7 +1429,9 @@ const server = http.createServer(async (req, res) => {
 
     const ext = path.extname(filePath).toLowerCase();
     const headers = { "Content-Type": mimeTypes[ext] || "application/octet-stream" };
-    if (requestedPath === "/service-worker.js") headers["Cache-Control"] = "no-cache";
+    if (["/index.html", "/service-worker.js", "/src/app.js", "/src/styles.css", "/src/pwa.js"].includes(requestedPath)) {
+      headers["Cache-Control"] = "no-cache";
+    }
     res.writeHead(200, headers);
     res.end(content);
   });

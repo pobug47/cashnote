@@ -1,4 +1,4 @@
-const CACHE_NAME = "asset-board-pwa-v5";
+const CACHE_NAME = "asset-board-pwa-v6";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -35,12 +35,22 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.pathname.startsWith("/api/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).catch(() => caches.match("/index.html")));
     return;
   }
 
-  event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
+  );
 });

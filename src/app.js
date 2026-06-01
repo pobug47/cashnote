@@ -794,7 +794,8 @@ function showLoginScene(message = null) {
   document.querySelector("#appShell").hidden = true;
   const hint = document.querySelector("#loginHint");
   if (hint) {
-    hint.textContent = message || "이메일과 비밀번호로 서버 DB에 저장된 가계부를 불러옵니다.";
+    hint.textContent = message || "";
+    hint.hidden = !message;
   }
 }
 
