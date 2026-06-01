@@ -28,24 +28,13 @@
           비밀번호
           <input name="password" type="password" autocomplete="current-password" required />
         </label>
-        <label id="signupConfirmPasswordField" hidden>
-          비밀번호 확인
-          <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" />
-        </label>
-        <div id="signupVerificationField" class="login-verification-field" hidden>
-          <label>
-            이메일 인증번호
-            <input name="verificationCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6자리" />
-          </label>
-          <button id="requestSignupCodeButton" type="button" class="secondary-button">인증번호 받기</button>
-          <p id="loginVerificationStatus" class="form-status login-status" aria-live="polite"></p>
-        </div>
         <label id="inviteCodeField" hidden>
           초대 코드
           <input name="inviteCode" type="text" autocomplete="off" placeholder="초대받은 경우만 입력" />
         </label>
         <button type="submit" class="primary-button">로그인</button>
         <div class="login-helper-actions">
+          <button id="openSignupButton" type="button" class="login-reset-button">회원가입</button>
           <button id="showInviteCodeButton" type="button" class="login-reset-button">초대 코드 입력</button>
           <button id="forgotPasswordButton" type="button" class="login-reset-button">비밀번호 찾기</button>
         </div>
@@ -659,6 +648,54 @@
           <button id="cancelGoalModal" type="button" class="secondary-button">취소</button>
           <button id="confirmGoalModal" type="button" class="primary-button">목표로 설정</button>
         </div>
+      </section>
+    </div>
+
+    <div id="signupModal" class="modal-backdrop" hidden>
+      <section class="goal-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="signupTitle">
+        <div class="goal-modal-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
+            <path d="M19 8v6" />
+            <path d="M16 11h6" />
+          </svg>
+        </div>
+        <div>
+          <span class="modal-eyebrow">새 계정 만들기</span>
+          <h2 id="signupTitle">회원가입</h2>
+          <p>이메일 인증 후 서버 DB에 새 가계부를 생성합니다.</p>
+        </div>
+        <form id="signupForm" class="account-form">
+          <label>
+            이메일
+            <input name="email" type="email" autocomplete="email" placeholder="name@example.com" required />
+          </label>
+          <div class="inline-field-actions">
+            <label>
+              이메일 인증번호
+              <input name="verificationCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6자리" required />
+            </label>
+            <button id="requestSignupCodeButton" type="button" class="secondary-button">인증번호 받기</button>
+          </div>
+          <label>
+            비밀번호
+            <input name="password" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          <label>
+            비밀번호 확인
+            <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          <label>
+            초대 코드
+            <input name="inviteCode" type="text" autocomplete="off" placeholder="초대받은 경우만 입력" />
+          </label>
+          <p id="signupStatus" class="form-status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button id="cancelSignup" type="button" class="secondary-button">취소</button>
+            <button type="submit" class="primary-button">가입 완료</button>
+          </div>
+        </form>
       </section>
     </div>
 

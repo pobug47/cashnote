@@ -828,22 +828,6 @@ function prefillInviteCodeFromUrl() {
   }
 }
 
-function setSignupVerificationVisible(visible) {
-  const confirmField = document.querySelector("#signupConfirmPasswordField");
-  const verificationField = document.querySelector("#signupVerificationField");
-  const confirmInput = document.querySelector("#loginForm")?.elements.confirmPassword;
-  const codeInput = document.querySelector("#loginForm")?.elements.verificationCode;
-  if (!confirmField || !verificationField) return;
-
-  confirmField.hidden = !visible;
-  verificationField.hidden = !visible;
-  if (!visible) {
-    if (confirmInput) confirmInput.value = "";
-    if (codeInput) codeInput.value = "";
-    setFormStatus("#loginVerificationStatus");
-  }
-}
-
 function validatePasswordValue(password) {
   return String(password || "").length >= 8;
 }
@@ -877,34 +861,18 @@ function startApp() {
 
 function initAuth() {
   renderTheme();
+  initSignupControls();
   initPasswordResetControls();
   const loginForm = document.querySelector("#loginForm");
-  const signupCodeButton = document.querySelector("#requestSignupCodeButton");
   document.querySelector("#showInviteCodeButton").addEventListener("click", () => {
     setInviteCodeFieldVisible(document.querySelector("#inviteCodeField").hidden);
   });
   prefillInviteCodeFromUrl();
+  document.querySelector("#openSignupButton").addEventListener("click", () => {
+    openSignupModal(loginForm.elements.email.value, loginForm.elements.inviteCode.value);
+  });
   document.querySelector("#forgotPasswordButton").addEventListener("click", () => {
     openPasswordResetModal(loginForm.elements.email.value);
-  });
-  loginForm.elements.email.addEventListener("input", () => setSignupVerificationVisible(false));
-  signupCodeButton?.addEventListener("click", async () => {
-    const email = normalizeEmail(loginForm.elements.email.value);
-    if (!email) {
-      setFormStatus("#loginVerificationStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
-      loginForm.elements.email.focus();
-      return;
-    }
-    try {
-      await apiRequest("/api/auth/send-code", {
-        method: "POST",
-        body: { email, purpose: "signup" }
-      });
-      setFormStatus("#loginVerificationStatus", "인증번호를 이메일로 보냈습니다. 10분 안에 입력해 주세요.", "success");
-      loginForm.elements.verificationCode.focus();
-    } catch (error) {
-      setFormStatus("#loginVerificationStatus", error.message, "error");
-    }
   });
 
   loginForm.addEventListener("submit", async (event) => {
@@ -912,21 +880,9 @@ function initAuth() {
     const form = new FormData(loginForm);
     const email = normalizeEmail(form.get("email"));
     const password = String(form.get("password") || "");
-    const confirmPassword = String(form.get("confirmPassword") || "");
-    const verificationCode = String(form.get("verificationCode") || "").replace(/[^\d]/g, "");
     const inviteCode = normalizeInviteCode(form.get("inviteCode"));
 
     if (!email || !password) return;
-    if (!document.querySelector("#signupConfirmPasswordField").hidden) {
-      if (!validatePasswordValue(password)) {
-        setFormStatus("#loginVerificationStatus", "비밀번호는 8자 이상으로 입력해 주세요.", "error");
-        return;
-      }
-      if (password !== confirmPassword) {
-        setFormStatus("#loginVerificationStatus", "비밀번호 확인이 서로 다릅니다.", "error");
-        return;
-      }
-    }
 
     try {
       const result = await apiRequest("/api/auth/login", {
@@ -934,8 +890,6 @@ function initAuth() {
         body: {
           email,
           password,
-          confirmPassword,
-          verificationCode,
           inviteCode,
           initialState: initialServerStateForEmail(email)
         }
@@ -947,19 +901,17 @@ function initAuth() {
       persist();
       loginForm.reset();
       setInviteCodeFieldVisible(false);
-      setSignupVerificationVisible(false);
       startApp();
     } catch (error) {
       if (inviteCode) setInviteCodeFieldVisible(true);
       if (error.payload?.requiresVerification) {
-        setSignupVerificationVisible(true);
-        const target = loginForm.elements.confirmPassword.value ? loginForm.elements.verificationCode : loginForm.elements.confirmPassword;
-        target.focus();
+        showLoginScene("가입되지 않은 이메일입니다. 회원가입을 눌러 새 계정을 만들어 주세요.");
+        document.querySelector("#openSignupButton").focus();
       } else {
         loginForm.elements.password.value = "";
         loginForm.elements.password.focus();
+        showLoginScene(error.message);
       }
-      showLoginScene(error.message);
     }
   });
 
@@ -1333,6 +1285,107 @@ function initAdminControls() {
       setFormStatus("#noticeAdminStatus", error.message, "error");
     }
   });
+}
+
+function initSignupControls() {
+  const signupModal = document.querySelector("#signupModal");
+  const signupForm = document.querySelector("#signupForm");
+  const cancelSignup = document.querySelector("#cancelSignup");
+  const requestSignupCode = document.querySelector("#requestSignupCodeButton");
+  if (!signupModal || !signupForm) return;
+
+  requestSignupCode?.addEventListener("click", async () => {
+    const email = normalizeEmail(signupForm.elements.email.value);
+    if (!email) {
+      setFormStatus("#signupStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
+      signupForm.elements.email.focus();
+      return;
+    }
+    try {
+      await apiRequest("/api/auth/send-code", {
+        method: "POST",
+        body: { email, purpose: "signup" }
+      });
+      setFormStatus("#signupStatus", "인증번호를 이메일로 보냈습니다. 10분 안에 입력해 주세요.", "success");
+      signupForm.elements.verificationCode.focus();
+    } catch (error) {
+      setFormStatus("#signupStatus", error.message, "error");
+    }
+  });
+
+  signupForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(signupForm);
+    const email = normalizeEmail(form.get("email"));
+    const verificationCode = String(form.get("verificationCode") || "").replace(/[^\d]/g, "");
+    const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    const inviteCode = normalizeInviteCode(form.get("inviteCode"));
+
+    if (!email) {
+      setFormStatus("#signupStatus", "이메일 주소를 정확히 입력해 주세요.", "error");
+      return;
+    }
+    if (!verificationCode) {
+      setFormStatus("#signupStatus", "이메일 인증번호를 입력해 주세요.", "error");
+      return;
+    }
+    if (!validatePasswordValue(password)) {
+      setFormStatus("#signupStatus", "비밀번호는 8자 이상으로 입력해 주세요.", "error");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setFormStatus("#signupStatus", "비밀번호 확인이 서로 다릅니다.", "error");
+      return;
+    }
+
+    try {
+      const result = await apiRequest("/api/auth/login", {
+        method: "POST",
+        body: {
+          email,
+          password,
+          confirmPassword,
+          verificationCode,
+          inviteCode,
+          initialState: initialServerStateForEmail(email)
+        }
+      });
+      applyServerSession(result);
+      state.selectedMonth = currentMonthValue();
+      state.selectedTransactionId = null;
+      state.selectedCategory = "전체";
+      persist();
+      closeSignupModal();
+      document.querySelector("#loginForm").reset();
+      setInviteCodeFieldVisible(false);
+      startApp();
+    } catch (error) {
+      setFormStatus("#signupStatus", error.message, "error");
+    }
+  });
+
+  cancelSignup?.addEventListener("click", closeSignupModal);
+  signupModal.addEventListener("click", (event) => {
+    if (event.target.id === "signupModal") closeSignupModal();
+  });
+}
+
+function openSignupModal(email = "", inviteCode = "") {
+  const modal = document.querySelector("#signupModal");
+  const form = document.querySelector("#signupForm");
+  form.reset();
+  form.elements.email.value = displayEmail(email) === "-" ? "" : displayEmail(email);
+  form.elements.inviteCode.value = normalizeInviteCode(inviteCode);
+  setFormStatus("#signupStatus");
+  modal.hidden = false;
+  form.elements.email.focus();
+}
+
+function closeSignupModal() {
+  document.querySelector("#signupModal").hidden = true;
+  document.querySelector("#signupForm").reset();
+  setFormStatus("#signupStatus");
 }
 
 function initPasswordResetControls() {
@@ -3666,6 +3719,9 @@ document.querySelectorAll(".goal-progress-list").forEach((list) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !document.querySelector("#goalConfirmModal").hidden) {
     closeGoalModal();
+  }
+  if (event.key === "Escape" && !document.querySelector("#signupModal").hidden) {
+    closeSignupModal();
   }
   if (event.key === "Escape" && !document.querySelector("#passwordResetModal").hidden) {
     closePasswordResetModal();
