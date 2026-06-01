@@ -17,7 +17,7 @@
   --amber: #9a681a;
   --red: #a13d35;
   --shadow: 0 18px 45px rgba(33, 45, 38, 0.08);
-  --ad-banner-height: 82px;
+  --ad-banner-height: 104px;
 }
 
 * {
@@ -286,9 +286,11 @@ button {
   left: 260px;
   z-index: 30;
   padding: 10px 30px;
+  max-height: var(--ad-banner-height);
   border-top: 1px solid rgba(var(--theme-rgb), 0.18);
   background: rgba(244, 246, 243, 0.94);
   backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .ad-banner-inner {
@@ -334,14 +336,19 @@ button {
 
 .ad-live-slot {
   display: block;
+  height: 60px;
   min-height: 58px;
+  max-height: 60px;
   padding: 0;
   overflow: hidden;
 }
 
 .ad-live-slot .adsbygoogle {
   width: 100%;
-  min-height: 58px;
+  height: 60px !important;
+  min-height: 0;
+  max-height: 60px;
+  overflow: hidden;
 }
 
 .ad-action {
@@ -1447,6 +1454,14 @@ textarea {
   font-size: 13px;
 }
 
+.field-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .verification-countdown {
   display: inline-flex;
   width: fit-content;
@@ -1779,9 +1794,13 @@ textarea {
 
 .admin-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   align-items: end;
   gap: 12px;
+}
+
+.admin-form-grid.time-grid input[type="datetime-local"] {
+  min-width: 0;
 }
 
 .checkbox-label {

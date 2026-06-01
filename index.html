@@ -14,7 +14,7 @@
   </head>
   <body>
     <section id="loginScene" class="login-scene">
-      <form id="loginForm" class="login-card">
+      <form id="loginForm" class="login-card" autocomplete="off">
         <div>
           <span class="login-mark">₩</span>
           <h1>자산 보드 로그인</h1>
@@ -22,7 +22,7 @@
         </div>
         <label>
           이메일
-          <input name="email" type="email" autocomplete="email" placeholder="name@example.com" required />
+          <input name="email" type="email" autocomplete="off" placeholder="name@example.com" required />
         </label>
         <label>
           비밀번호
@@ -483,7 +483,7 @@
                   </label>
                   <label>
                     작성자 이름
-                    <input name="memberName" type="text" maxlength="20" placeholder="예: 남편, 아내, 가족" />
+                    <input name="memberName" type="text" maxlength="20" placeholder="예: 남편, 아내, 가족" required />
                   </label>
                   <button id="createInviteCode" type="submit" class="secondary-button">초대 메일 보내기</button>
                 </form>
@@ -579,7 +579,7 @@
                   사용자에게 표시
                 </label>
               </div>
-              <div class="admin-form-grid">
+              <div class="admin-form-grid time-grid">
                 <label>
                   시작 일시
                   <input name="startsAt" type="datetime-local" />
@@ -669,7 +669,7 @@
         <form id="signupForm" class="account-form">
           <label>
             이메일
-            <input name="email" type="email" autocomplete="email" placeholder="name@example.com" required />
+            <input name="email" type="email" autocomplete="off" placeholder="name@example.com" required />
           </label>
           <div class="inline-field-actions">
             <label>
@@ -681,6 +681,7 @@
           <label>
             비밀번호
             <input name="password" type="password" autocomplete="new-password" minlength="8" required />
+            <small class="field-help">비밀번호는 8자 이상으로 입력해 주세요.</small>
           </label>
           <label>
             비밀번호 확인

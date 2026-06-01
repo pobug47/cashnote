@@ -282,7 +282,14 @@ function isAdminEmail(email) {
 }
 
 function publicAccount(account) {
-  return account ? { email: account.email, ledgerId: account.ledgerId, isAdmin: isAdminEmail(account.email) } : null;
+  return account
+    ? {
+        email: account.email,
+        ledgerId: account.ledgerId,
+        isAdmin: isAdminEmail(account.email),
+        memberName: account.memberName || ""
+      }
+    : null;
 }
 
 function normalizeNoticeSeverity(value) {
@@ -562,6 +569,18 @@ function addInviteMember(state, memberName) {
   return {
     ...state,
     householdMembers: uniqueNames([...(state.householdMembers || []), memberName])
+  };
+}
+
+function applyInviteAuthorMapping(state, email, memberName) {
+  if (!email || !memberName) return state;
+  return {
+    ...state,
+    householdMembers: uniqueNames([...(state.householdMembers || []), memberName]),
+    authorByEmail: {
+      ...(state.authorByEmail || {}),
+      [email]: memberName
+    }
   };
 }
 
@@ -892,6 +911,10 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: "초대 코드를 찾을 수 없습니다. 코드를 다시 확인해 주세요." });
         return;
       }
+      if (invite?.invitedEmail && invite.invitedEmail !== email) {
+        sendJson(res, 403, { error: "초대받은 이메일과 입력한 이메일이 다릅니다. 초대받은 이메일로 가입해 주세요.", requiresVerification: true });
+        return;
+      }
 
       let account = await getAccount(db, email);
       if (account && !verifyPassword(password, account.password)) {
@@ -941,11 +964,16 @@ const server = http.createServer(async (req, res) => {
 
       let state = (await getLedgerState(db, ledgerId)) || body.initialState || {};
       if (invite) {
-        state = addInviteMember(state, invite.memberName || email);
+        state = applyInviteAuthorMapping(state, email, invite.memberName || email);
       }
       state = { ...state, auth: { email } };
       await saveLedgerState(db, ledgerId, state);
-      sendJson(res, 200, { account: publicAccount(account), ledgerId, sessionToken: await createSession(db, { ...account, ledgerId }), state });
+      sendJson(res, 200, {
+        account: publicAccount({ ...account, ledgerId, memberName: invite?.memberName || state.authorByEmail?.[email] || "" }),
+        ledgerId,
+        sessionToken: await createSession(db, { ...account, ledgerId }),
+        state
+      });
     } catch (error) {
       sendJson(res, 500, { error: "로그인 처리에 실패했습니다.", detail: error.message });
     }
@@ -1355,6 +1383,10 @@ const server = http.createServer(async (req, res) => {
       }
       if ((body.invitedEmail || body.email) && !invitedEmail) {
         sendJson(res, 400, { error: "초대받을 이메일 주소를 정확히 입력해 주세요." });
+        return;
+      }
+      if (!memberName) {
+        sendJson(res, 400, { error: "초대받을 작성자 이름을 입력해 주세요." });
         return;
       }
 

@@ -43,6 +43,7 @@ const sampleData = {
     image: null
   },
   householdMembers: ["민석"],
+  authorByEmail: {},
   themeColor: "#28724f",
   auth: null,
   monthlyGoals: [],
@@ -224,6 +225,26 @@ function ensureAuthorMembers() {
   state.householdMembers = uniqueNames([...(state.householdMembers || []), defaultAuthorName()]);
 }
 
+function todayDateValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultTransactionDate() {
+  if (state.selectedCalendarDate?.startsWith(state.selectedMonth)) return state.selectedCalendarDate;
+  const today = todayDateValue();
+  if (today.startsWith(state.selectedMonth)) return today;
+  return `${state.selectedMonth}-01`;
+}
+
+function currentAuthorName() {
+  const mapped = String(state.authorByEmail?.[currentUserEmail] || "").trim();
+  return mapped || defaultAuthorName();
+}
+
 function createInitialStateForUser(email) {
   const next = structuredClone(sampleData);
   next.selectedMonth = currentMonthValue();
@@ -239,6 +260,7 @@ function createInitialStateForUser(email) {
     image: null
   };
   next.householdMembers = ["사용자"];
+  next.authorByEmail = email ? { [email]: "사용자" } : {};
   next.monthlyGoals = [];
   next.transactions = [];
   next.securities = [];
@@ -280,6 +302,7 @@ function loadState(email = currentUserEmail) {
         ...(parsed.profile || {})
       },
       householdMembers,
+      authorByEmail: parsed.authorByEmail && typeof parsed.authorByEmail === "object" ? parsed.authorByEmail : {},
       themeColor: isHexColor(parsed.themeColor) ? parsed.themeColor : sampleData.themeColor,
       auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
       monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
@@ -404,11 +427,11 @@ function renderBottomAdSlot(ads = {}) {
   container.className = "ad-banner-inner ad-live-slot";
   container.innerHTML = `
     <ins class="adsbygoogle"
-      style="display:block"
+      style="display:block;width:100%;height:60px;max-height:60px"
       data-ad-client="${escapeHtml(client)}"
       data-ad-slot="${escapeHtml(slot)}"
-      data-ad-format="auto"
-      data-full-width-responsive="true"></ins>
+      data-ad-format="horizontal"
+      data-full-width-responsive="false"></ins>
   `;
 
   window.requestAnimationFrame(() => {
@@ -441,6 +464,10 @@ function applyServerSession(result) {
   state = result.state || state;
   if (currentUserEmail) {
     state.auth = { email: currentUserEmail };
+    state.authorByEmail = {
+      ...(state.authorByEmail || {}),
+      ...(result.account?.memberName ? { [currentUserEmail]: result.account.memberName } : {})
+    };
   }
   if (currentUserEmail) sessionStorage.setItem(SESSION_KEY, currentUserEmail);
   if (currentLedgerId) sessionStorage.setItem(SESSION_LEDGER_KEY, currentLedgerId);
@@ -906,14 +933,12 @@ function setInviteCodeFieldVisible(visible) {
 }
 
 function prefillInviteCodeFromUrl() {
-  const loginForm = document.querySelector("#loginForm");
-  if (!loginForm) return;
-
   const inviteCode = normalizeInviteCode(new URL(window.location.href).searchParams.get("invite"));
   if (!inviteCode) return;
 
-  setInviteCodeFieldVisible(true);
-  loginForm.elements.inviteCode.value = inviteCode;
+  setInviteCodeFieldVisible(false);
+  openSignupModal("", inviteCode);
+  setFormStatus("#signupStatus", "초대 코드가 적용되었습니다. 이메일 인증 후 가입을 완료해 주세요.", "success");
   try {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl);
@@ -958,12 +983,16 @@ function initAuth() {
   initSignupControls();
   initPasswordResetControls();
   const loginForm = document.querySelector("#loginForm");
+  if (!isAuthenticated()) {
+    loginForm.elements.email.value = "";
+    loginForm.elements.password.value = "";
+  }
   document.querySelector("#showInviteCodeButton").addEventListener("click", () => {
     setInviteCodeFieldVisible(document.querySelector("#inviteCodeField").hidden);
   });
   prefillInviteCodeFromUrl();
   document.querySelector("#openSignupButton").addEventListener("click", () => {
-    openSignupModal(loginForm.elements.email.value, loginForm.elements.inviteCode.value);
+    openSignupModal("", loginForm.elements.inviteCode.value);
   });
   document.querySelector("#forgotPasswordButton").addEventListener("click", () => {
     openPasswordResetModal(loginForm.elements.email.value);
@@ -1267,6 +1296,9 @@ function initAccountControls() {
 
       state.householdMembers = members.map((item) => (item === oldName ? nextName : item));
       state.transactions = state.transactions.map((item) => (authorName(item) === oldName ? { ...item, author: nextName } : item));
+      state.authorByEmail = Object.fromEntries(
+        Object.entries(state.authorByEmail || {}).map(([email, author]) => [email, author === oldName ? nextName : author])
+      );
       if (defaultAuthorName() === oldName) {
         state.profile.name = nextName;
       }
@@ -1285,6 +1317,7 @@ function initAccountControls() {
 
     state.householdMembers = members.filter((item) => item !== member);
     state.transactions = state.transactions.map((item) => (item.author === member ? { ...item, author: "" } : item));
+    state.authorByEmail = Object.fromEntries(Object.entries(state.authorByEmail || {}).filter(([, author]) => author !== member));
     setFormStatus("#memberSettingsStatus", `${member} 작성자를 삭제했습니다.`, "success");
     persist();
     syncAuthorMenu();
@@ -1301,6 +1334,10 @@ function initAccountControls() {
     const memberName = String(form.get("memberName") || "").trim();
     if (!invitedEmail) {
       document.querySelector("#inviteCodeResult").innerHTML = `<small>초대받을 이메일 주소를 정확히 입력해 주세요.</small>`;
+      return;
+    }
+    if (!memberName) {
+      document.querySelector("#inviteCodeResult").innerHTML = `<small>초대받을 작성자 이름을 입력해 주세요.</small>`;
       return;
     }
 
@@ -1813,7 +1850,7 @@ function resolvePaymentAccount(form) {
 }
 
 function authorName(item = {}) {
-  return String(item.author || "").trim() || defaultAuthorName();
+  return String(item.author || "").trim() || currentAuthorName();
 }
 
 function syncAuthorMenu(selectedAuthor = null) {
@@ -1823,9 +1860,9 @@ function syncAuthorMenu(selectedAuthor = null) {
   ensureAuthorMembers();
   const authorField = document.querySelector("#authorField");
   const authorSelect = transactionForm.elements.author;
-  const previousAuthor = selectedAuthor || authorSelect.value || defaultAuthorName();
+  const previousAuthor = selectedAuthor || authorSelect.value || currentAuthorName();
   const members = uniqueNames(state.householdMembers);
-  const nextAuthor = members.includes(previousAuthor) ? previousAuthor : members[0] || defaultAuthorName();
+  const nextAuthor = members.includes(previousAuthor) ? previousAuthor : members[0] || currentAuthorName();
 
   const hasMultipleAuthors = members.length > 1;
   if (authorField) authorField.hidden = !hasMultipleAuthors;
@@ -2131,7 +2168,7 @@ function prefillTransactionForm({ type, category, amount, memo }) {
   const transactionForm = document.querySelector("#transactionForm");
   editingTransactionId = null;
   transactionForm.reset();
-  transactionForm.elements.date.value = `${state.selectedMonth}-20`;
+  transactionForm.elements.date.value = defaultTransactionDate();
   transactionForm.elements.type.value = type;
   syncCategoryMenu(category);
   if (transactionForm.elements.category.value !== category) {
@@ -3414,7 +3451,7 @@ function transactionPayloadFromForm(form, id) {
   const category = resolveTransactionCategory(form);
   const paymentAccount = resolvePaymentAccount(form);
   const members = uniqueNames(state.householdMembers);
-  const author = members.length > 1 ? String(form.get("author") || members[0] || "").trim() : "";
+  const author = members.length > 1 ? String(form.get("author") || currentAuthorName() || members[0] || "").trim() : "";
 
   return {
     id,
@@ -3661,7 +3698,7 @@ function initForms() {
 function syncTransactionDateInput() {
   const transactionForm = document.querySelector("#transactionForm");
   if (!transactionForm) return;
-  transactionForm.date.value = `${state.selectedMonth}-20`;
+  transactionForm.date.value = defaultTransactionDate();
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => {
