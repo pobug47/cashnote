@@ -18,6 +18,7 @@ const passwordMinLength = 8;
 const noticeSeverities = ["info", "warning", "maintenance"];
 const defaultAdsenseClient = "ca-pub-3917705111391908";
 const defaultAdsenseBottomBannerSlot = "2217196308";
+const emailDeliveryUnavailableMessage = "이메일 인증 발송이 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.";
 let dbReadyPromise = null;
 const rateLimits = new Map();
 const pool = new Pool({
@@ -397,7 +398,7 @@ function appBaseUrl(req) {
 
 async function sendVerificationEmail(email, code, purpose) {
   if (!smtpConfigured()) {
-    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+    throw new Error(emailDeliveryUnavailableMessage);
   }
 
   const title = purpose === "reset" ? "비밀번호 재설정 인증번호" : purpose === "change-email" ? "이메일 변경 인증번호" : "회원가입 인증번호";
@@ -412,7 +413,7 @@ async function sendVerificationEmail(email, code, purpose) {
 
 async function sendInviteEmail(email, { code, inviteLink, inviter, memberName }) {
   if (!smtpConfigured()) {
-    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+    throw new Error(emailDeliveryUnavailableMessage);
   }
 
   const inviterName = String(inviter || "Cashnote 사용자").trim();
@@ -443,7 +444,7 @@ async function sendInviteEmail(email, { code, inviteLink, inviter, memberName })
 
 async function createEmailVerification(db, email, purpose) {
   if (!smtpConfigured()) {
-    throw new Error("이메일 발송 설정이 없습니다. SMTP_HOST와 SMTP_FROM을 설정해 주세요.");
+    throw new Error(emailDeliveryUnavailableMessage);
   }
 
   const existing = await db.query(
@@ -1374,7 +1375,7 @@ const server = http.createServer(async (req, res) => {
       }
       sendJson(res, 200, { code, ledgerId: session.ledgerId, inviteLink, emailSent: Boolean(invitedEmail) });
     } catch (error) {
-      sendJson(res, smtpConfigured() ? 500 : 503, { error: "초대 메일을 보내지 못했습니다.", detail: error.message });
+      sendJson(res, smtpConfigured() ? 500 : 503, { error: smtpConfigured() ? "초대 메일을 보내지 못했습니다." : emailDeliveryUnavailableMessage });
     }
     return;
   }
