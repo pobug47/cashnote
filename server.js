@@ -16,6 +16,8 @@ const verificationTtlMs = 1000 * 60 * 10;
 const verificationCooldownMs = 1000 * 60;
 const passwordMinLength = 8;
 const noticeSeverities = ["info", "warning", "maintenance"];
+const defaultAdsenseClient = "ca-pub-3917705111391908";
+const defaultAdsenseBottomBannerSlot = "2217196308";
 let dbReadyPromise = null;
 const rateLimits = new Map();
 const pool = new Pool({
@@ -74,7 +76,7 @@ function sendJson(res, statusCode, payload) {
 }
 
 function adsensePublisherId() {
-  const client = String(process.env.ADSENSE_CLIENT || "");
+  const client = String(process.env.ADSENSE_CLIENT || defaultAdsenseClient);
   const id = String(process.env.ADSENSE_PUBLISHER_ID || client.replace(/^ca-/, ""));
   return /^pub-\d+$/.test(id) ? id : "";
 }
@@ -798,8 +800,8 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ads: {
         provider: process.env.AD_PROVIDER || "adsense",
-        adsenseClient: process.env.ADSENSE_CLIENT || "",
-        bottomBannerSlot: process.env.ADSENSE_BOTTOM_BANNER_SLOT || process.env.ADSENSE_SLOT || ""
+        adsenseClient: process.env.ADSENSE_CLIENT || defaultAdsenseClient,
+        bottomBannerSlot: process.env.ADSENSE_BOTTOM_BANNER_SLOT || process.env.ADSENSE_SLOT || defaultAdsenseBottomBannerSlot
       }
     });
     return;
