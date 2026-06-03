@@ -654,6 +654,74 @@ h2 {
   justify-content: flex-end;
 }
 
+.support-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.44fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.support-board-panel {
+  min-width: 0;
+}
+
+.support-ticket-list {
+  display: grid;
+  gap: 12px;
+}
+
+.support-ticket-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.support-ticket-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.support-ticket-top span,
+.support-ticket-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.support-ticket-top strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 17px;
+}
+
+.support-ticket-top em {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--theme-dark);
+  background: var(--green-soft);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.support-ticket-card p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.support-ticket-image {
+  width: min(320px, 100%);
+  max-height: 220px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 .active-goals-panel {
   margin-bottom: 14px;
 }
@@ -2176,6 +2244,7 @@ textarea {
   .badge-list,
   .budget-layout,
   .budget-list,
+  .support-layout,
   .review-metric-grid,
   .goal-list,
   .goal-progress-list,
@@ -2217,6 +2286,7 @@ textarea {
   .badge-list,
   .budget-layout,
   .budget-list,
+  .support-layout,
   .review-metric-grid,
   .goal-list,
   .goal-progress-list,

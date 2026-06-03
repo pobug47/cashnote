@@ -75,6 +75,7 @@
           <button class="nav-item" data-view="budgets">예산 설정</button>
           <button class="nav-item" data-view="investments">투자/배당</button>
           <button class="nav-item" data-view="insights">기록 회고</button>
+          <button class="nav-item" data-view="support">고객센터</button>
           <button class="nav-item" data-view="settings">시스템 설정</button>
           <button id="adminNavItem" class="nav-item" data-view="admin" hidden>관리자</button>
         </nav>
@@ -488,6 +489,54 @@
                 </div>
               </div>
               <div id="nextGoals" class="goal-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="supportView" class="view">
+          <div class="support-layout">
+            <form id="supportForm" class="panel form-panel">
+              <div>
+                <h2>불편 사항 등록</h2>
+                <p class="panel-description">서비스 이용 중 불편했던 점이나 개선 요청을 게시판처럼 남길 수 있습니다.</p>
+              </div>
+              <label>
+                문의 유형
+                <select name="category" required>
+                  <option value="불편 사항">불편 사항</option>
+                  <option value="오류 신고">오류 신고</option>
+                  <option value="개선 요청">개선 요청</option>
+                  <option value="계정/로그인">계정/로그인</option>
+                  <option value="광고/결제">광고/결제</option>
+                  <option value="기타">기타</option>
+                </select>
+              </label>
+              <label>
+                제목
+                <input name="title" type="text" maxlength="80" placeholder="예: 거래 등록 후 예산 선택이 헷갈려요" required />
+              </label>
+              <label>
+                내용
+                <textarea name="body" maxlength="1200" placeholder="어떤 화면에서 어떤 점이 불편했는지 적어 주세요." required></textarea>
+              </label>
+              <label>
+                첨부 이미지
+                <input name="attachment" type="file" accept="image/*" />
+                <small class="field-help">선택 사항입니다. 화면 캡처를 첨부하면 확인이 쉬워요.</small>
+              </label>
+              <button type="submit" class="primary-button">문의 등록</button>
+              <p id="supportStatus" class="form-status" aria-live="polite"></p>
+            </form>
+
+            <section class="panel support-board-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>내 문의 목록</h2>
+                  <span id="supportBoardHint">등록한 문의를 최신순으로 보여줍니다.</span>
+                </div>
+                <span id="supportTicketCount"></span>
+              </div>
+              <div id="supportTicketList" class="support-ticket-list"></div>
             </section>
           </div>
         </section>

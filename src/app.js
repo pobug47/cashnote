@@ -58,6 +58,7 @@ const sampleData = {
   auth: null,
   monthlyGoals: [],
   budgets: defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item })),
+  supportTickets: [],
   transactions: sampleTransactions.map((item) => ({ id: crypto.randomUUID(), ...item })),
   securities: sampleSecurities.map((item) => ({ id: crypto.randomUUID(), ...item }))
 };
@@ -117,7 +118,7 @@ let activeNoticeModalIds = [];
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
-const appViews = ["dashboard", "transactions", "budgets", "investments", "insights", "settings", "admin"];
+const appViews = ["dashboard", "transactions", "budgets", "investments", "insights", "support", "settings", "admin"];
 const securityTabs = ["details", "announcements", "projections"];
 
 const formatter = new Intl.NumberFormat("ko-KR", {
@@ -293,6 +294,7 @@ function createInitialStateForUser(email) {
   next.authorByEmail = email ? { [email]: "사용자" } : {};
   next.monthlyGoals = [];
   next.budgets = defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item }));
+  next.supportTickets = [];
   next.transactions = [];
   next.securities = [];
   return next;
@@ -339,6 +341,7 @@ function loadState(email = currentUserEmail) {
       auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
       monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
       budgets: normalizeBudgets(parsed.budgets),
+      supportTickets: normalizeSupportTickets(parsed.supportTickets),
       transactions: deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : structuredClone(sampleData.transactions)).map((item) => ({
         ...item,
         author: item.author || householdMembers[0] || defaultAuthorName(parsed.profile)
@@ -390,6 +393,24 @@ function normalizeBudgets(budgets) {
   });
 
   return normalized.length ? normalized : defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item }));
+}
+
+function normalizeSupportTickets(tickets) {
+  if (!Array.isArray(tickets)) return [];
+  return tickets
+    .map((ticket) => ({
+      id: ticket?.id || crypto.randomUUID(),
+      category: String(ticket?.category || "불편 사항").trim(),
+      title: String(ticket?.title || "").trim(),
+      body: String(ticket?.body || "").trim(),
+      status: String(ticket?.status || "접수").trim(),
+      author: String(ticket?.author || "").trim(),
+      email: String(ticket?.email || "").trim(),
+      attachment: ticket?.attachment || null,
+      createdAt: ticket?.createdAt || new Date().toISOString(),
+      updatedAt: ticket?.updatedAt || ticket?.createdAt || new Date().toISOString()
+    }))
+    .filter((ticket) => ticket.title && ticket.body);
 }
 
 function currentMonthValue() {
@@ -1105,6 +1126,7 @@ function startApp() {
   showAppScene();
   initForms();
   initBudgetControls();
+  initSupportControls();
   initProfileControls();
   initAccountControls();
   initAdminControls();
@@ -2750,6 +2772,56 @@ function renderBudgets() {
     : `<div class="list-item"><span>아직 등록된 예산 항목이 없습니다.</span></div>`;
 }
 
+function supportStatusLabel(status) {
+  return {
+    접수: "접수",
+    확인중: "확인 중",
+    답변완료: "답변 완료"
+  }[status] || status || "접수";
+}
+
+function supportDateLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function renderSupportTickets() {
+  const list = document.querySelector("#supportTicketList");
+  if (!list) return;
+
+  state.supportTickets = normalizeSupportTickets(state.supportTickets);
+  const tickets = [...state.supportTickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  document.querySelector("#supportTicketCount").textContent = `${tickets.length}건`;
+  document.querySelector("#supportBoardHint").textContent = tickets.length
+    ? "등록한 문의를 최신순으로 보여줍니다."
+    : "아직 등록한 문의가 없습니다.";
+
+  list.innerHTML = tickets.length
+    ? tickets
+        .map(
+          (ticket) => `
+            <article class="support-ticket-card">
+              <div class="support-ticket-top">
+                <div>
+                  <span>${escapeHtml(ticket.category)} · ${escapeHtml(supportDateLabel(ticket.createdAt))}</span>
+                  <strong>${escapeHtml(ticket.title)}</strong>
+                </div>
+                <em>${escapeHtml(supportStatusLabel(ticket.status))}</em>
+              </div>
+              <p>${escapeHtml(ticket.body)}</p>
+              ${
+                ticket.attachment?.dataUrl
+                  ? `<img class="support-ticket-image" src="${escapeHtml(ticket.attachment.dataUrl)}" alt="${escapeHtml(ticket.attachment.name || "첨부 이미지")}" />`
+                  : ""
+              }
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="history-empty">서비스 이용 중 불편한 점이 생기면 이곳에 남겨 주세요.</div>`;
+}
+
 function setBudgetFormMode() {
   const form = document.querySelector("#budgetForm");
   if (!form) return;
@@ -3721,6 +3793,7 @@ function render() {
   renderBudgets();
   renderSecurities();
   renderInsights();
+  renderSupportTickets();
   renderAdmin();
 }
 
@@ -4149,6 +4222,72 @@ function initBudgetControls() {
   });
 
   setBudgetFormMode();
+}
+
+function readSupportAttachment(file) {
+  if (!file) return Promise.resolve(null);
+  const maxBytes = 2 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return Promise.reject(new Error("첨부 이미지는 2MB 이하만 등록할 수 있습니다."));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      resolve({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: reader.result
+      });
+    });
+    reader.addEventListener("error", () => reject(new Error("첨부 이미지를 읽지 못했습니다.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function initSupportControls() {
+  const supportForm = document.querySelector("#supportForm");
+  if (!supportForm) return;
+
+  supportForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(supportForm);
+    const category = String(form.get("category") || "불편 사항").trim();
+    const title = String(form.get("title") || "").trim();
+    const body = String(form.get("body") || "").trim();
+    const attachmentFile = supportForm.elements.attachment.files?.[0] || null;
+
+    if (!title || !body) {
+      setFormStatus("#supportStatus", "제목과 내용을 입력해 주세요.", "error");
+      return;
+    }
+
+    try {
+      const attachment = await readSupportAttachment(attachmentFile);
+      state.supportTickets = normalizeSupportTickets([
+        ...(state.supportTickets || []),
+        {
+          id: crypto.randomUUID(),
+          category,
+          title,
+          body,
+          status: "접수",
+          author: currentAuthorName(),
+          email: currentUserEmail || state.auth?.email || "",
+          attachment,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]);
+      supportForm.reset();
+      setFormStatus("#supportStatus", "문의가 등록되었습니다. 고객센터 목록에서 확인할 수 있습니다.", "success");
+      persist();
+      renderSupportTickets();
+    } catch (error) {
+      setFormStatus("#supportStatus", error.message, "error");
+    }
+  });
 }
 
 function syncTransactionDateInput() {
