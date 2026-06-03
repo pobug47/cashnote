@@ -59,7 +59,7 @@
             <span>가계부 · 저축 · 배당</span>
           </div>
         </div>
-        <div class="ledger-scope-switch" aria-label="가계부 범위">
+        <div id="ledgerScopeSwitch" class="ledger-scope-switch" aria-label="가계부 범위" hidden>
           <button class="ledger-scope-button active" type="button" data-ledger-scope="personal">
             <strong>개인 가계부</strong>
             <span>내 작성 내역</span>
@@ -80,8 +80,6 @@
           <button id="adminNavItem" class="nav-item" data-view="admin" hidden>관리자</button>
         </nav>
         <div class="storage-panel">
-          <span>저장 방식</span>
-          <strong>서버 DB 저장</strong>
           <button id="resetData" class="ghost-button" hidden>샘플로 초기화</button>
           <button id="logoutButton" class="ghost-button" type="button">로그아웃</button>
         </div>

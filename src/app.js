@@ -1055,6 +1055,8 @@ function renderProfile() {
 
 function renderLedgerScopeControls() {
   const hasShared = hasSharedLedger();
+  const switcher = document.querySelector("#ledgerScopeSwitch");
+  if (switcher) switcher.hidden = !hasShared;
   if (!hasShared && state.selectedLedgerScope === "shared") {
     state.selectedLedgerScope = "personal";
   }
