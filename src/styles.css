@@ -644,6 +644,11 @@ h2 {
   margin-bottom: 10px;
 }
 
+.budget-chart-title strong,
+.budget-chart-title span {
+  display: block;
+}
+
 .budget-chart-title strong {
   font-size: 15px;
 }
@@ -654,6 +659,38 @@ h2 {
   font-weight: 700;
 }
 
+.budget-chart-legend {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.budget-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.budget-chart-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.budget-legend-budget {
+  background: rgba(var(--theme-rgb), 0.16);
+  outline: 1px solid rgba(var(--theme-rgb), 0.22);
+}
+
+.budget-legend-used {
+  background: var(--green);
+}
+
 .budget-chart-board {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -661,7 +698,7 @@ h2 {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8faf8;
+  background: linear-gradient(180deg, rgba(var(--theme-rgb), 0.035), #fbfcfb);
 }
 
 .budget-y-axis {
@@ -703,18 +740,41 @@ h2 {
 
 .budget-bar-wrap {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  display: grid;
+  align-items: end;
+  justify-items: center;
   min-height: 170px;
 }
 
 .budget-bar {
+  grid-area: 1 / 1;
   display: block;
-  width: 14px;
+  align-self: end;
   min-height: 4px;
-  border-radius: 1px 1px 0 0;
-  background: #ff3b30;
+  border-radius: 4px 4px 0 0;
+}
+
+.budget-bar-budget {
+  width: 30px;
+  border: 1px solid rgba(var(--theme-rgb), 0.2);
+  background: rgba(var(--theme-rgb), 0.14);
+}
+
+.budget-bar-used {
+  width: 14px;
+  background: var(--green);
+  box-shadow: 0 7px 16px rgba(var(--theme-rgb), 0.24);
+}
+
+.budget-bar-single {
+  width: 18px;
+  background: var(--green);
+  box-shadow: 0 7px 16px rgba(var(--theme-rgb), 0.22);
+}
+
+.budget-bar-column.over-budget .budget-bar-used {
+  background: var(--red);
+  box-shadow: 0 7px 16px rgba(161, 61, 53, 0.22);
 }
 
 .budget-bar-value {

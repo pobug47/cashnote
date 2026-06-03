@@ -659,6 +659,7 @@ function renderTheme() {
   const rootStyle = document.documentElement.style;
   const themeInput = document.querySelector("#themeColorInput");
 
+  rootStyle.setProperty("--theme", themeColor);
   rootStyle.setProperty("--green", themeColor);
   rootStyle.setProperty("--green-soft", themeSoft);
   rootStyle.setProperty("--theme-dark", themeDark);
@@ -2835,7 +2836,7 @@ function renderBudgetChart(rows) {
     return;
   }
 
-  const maxAmount = Math.max(...rows.map((row) => row.amount), 10000);
+  const maxAmount = Math.max(...rows.map((row) => Math.max(row.amount, row.used || 0)), 10000);
   const roundedMax = Math.ceil(maxAmount / 10000 / 5) * 5;
   const chartMaxAmount = roundedMax * 10000;
   const axisValues = Array.from({ length: 6 }, (_, index) => Math.max(0, roundedMax - index * (roundedMax / 5)));
@@ -2843,8 +2844,18 @@ function renderBudgetChart(rows) {
 
   chart.innerHTML = `
     <div class="budget-chart-title">
-      <strong>${escapeHtml(budgetChartTitle())}</strong>
-      <span>${monthLabelFormatter.format(monthDate(state.selectedMonth))} 기준</span>
+      <div>
+        <strong>${escapeHtml(budgetChartTitle())}</strong>
+        <span>${monthLabelFormatter.format(monthDate(state.selectedMonth))} 기준</span>
+      </div>
+      ${
+        budgetBoardTab === "expense"
+          ? `<div class="budget-chart-legend" aria-label="그래프 범례">
+              <span><i class="budget-legend-budget"></i>예산</span>
+              <span><i class="budget-legend-used"></i>사용</span>
+            </div>`
+          : ""
+      }
     </div>
     <div class="budget-chart-board">
       <div class="budget-y-axis" aria-hidden="true">
@@ -2855,13 +2866,20 @@ function renderBudgetChart(rows) {
         ${rows
           .map((row) => {
             const height = Math.max(4, Math.min(100, (row.amount / chartMaxAmount) * 100));
+            const usedHeight = Math.max(row.used > 0 ? 4 : 0, Math.min(100, ((row.used || 0) / chartMaxAmount) * 100));
             const usedPercent = row.amount ? Math.min(100, (row.used / row.amount) * 100) : 0;
             const title = `${row.label}: ${formatKrw(row.amount)}${budgetBoardTab === "expense" ? ` / 사용 ${formatKrw(row.used)}` : ""}`;
+            const overBudget = budgetBoardTab === "expense" && row.used > row.amount;
             return `
-              <div class="budget-bar-column" title="${escapeHtml(title)}">
+              <div class="budget-bar-column ${overBudget ? "over-budget" : ""}" title="${escapeHtml(title)}">
                 <div class="budget-bar-wrap">
-                  <span class="budget-bar-value">${formatKrw(row.amount)}</span>
-                  <span class="budget-bar" style="height:${height}%"></span>
+                  <span class="budget-bar-value">${budgetBoardTab === "expense" ? `${formatKrw(row.used)} / ${formatKrw(row.amount)}` : formatKrw(row.amount)}</span>
+                  ${
+                    budgetBoardTab === "expense"
+                      ? `<span class="budget-bar budget-bar-budget" style="height:${height}%"></span>
+                         <span class="budget-bar budget-bar-used" style="height:${usedHeight}%"></span>`
+                      : `<span class="budget-bar budget-bar-single" style="height:${height}%"></span>`
+                  }
                 </div>
                 <strong>${escapeHtml(row.label)}</strong>
                 ${budgetBoardTab === "expense" ? `<small>사용률 ${usedPercent.toFixed(0)}%</small>` : `<small>${escapeHtml(row.detail || "")}</small>`}
