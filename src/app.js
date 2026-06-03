@@ -819,7 +819,7 @@ function renderMemberSettings() {
           <span>${escapeHtml(member)}</span>
           <small>${member === defaultMember ? "기본 작성자" : "추가 작성자"}</small>
           <button class="mini-button" type="button" data-edit-member="${escapeHtml(member)}">수정</button>
-          <button class="mini-button danger" type="button" data-remove-member="${escapeHtml(member)}" ${members.length <= 1 || member === defaultMember ? "disabled" : ""}>삭제</button>
+          ${member === defaultMember ? "" : `<button class="mini-button danger" type="button" data-remove-member="${escapeHtml(member)}">삭제</button>`}
         </div>
       `
     )
@@ -1544,6 +1544,10 @@ function initAccountControls() {
     const member = button.dataset.removeMember;
     const members = uniqueNames(state.householdMembers);
     if (members.length <= 1) return;
+    if (member === defaultAuthorName()) {
+      setFormStatus("#memberSettingsStatus", "기본 작성자는 삭제할 수 없습니다. 이름 변경만 가능합니다.", "error");
+      return;
+    }
 
     state.householdMembers = members.filter((item) => item !== member);
     state.transactions = state.transactions.map((item) => (item.author === member ? { ...item, author: "" } : item));
