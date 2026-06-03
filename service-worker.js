@@ -1,11 +1,11 @@
-const CACHE_NAME = "asset-board-pwa-v16";
+const CACHE_NAME = "asset-board-pwa-v17";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
-  "/src/styles.css",
-  "/src/app.js",
-  "/src/pwa.js",
+  "/src/styles.css?v=17",
+  "/src/app.js?v=17",
+  "/src/pwa.js?v=17",
   "/node_modules/xlsx/dist/xlsx.full.min.js",
   "/assets/icon-192.png",
   "/assets/icon-512.png",
