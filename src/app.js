@@ -118,6 +118,7 @@ let supportTickets = [];
 let supportRefreshPromise = null;
 let editingSupportTicketId = null;
 let activeNoticeModalIds = [];
+let budgetBoardTab = "expense";
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
@@ -2777,6 +2778,129 @@ function budgetUsage(budget) {
   return sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => transactionMatchesBudget(item, budget));
 }
 
+function groupTransactionsByCategory(items, type) {
+  const groups = new Map();
+  items.filter((item) => item.type === type).forEach((item) => {
+    const key = item.category || "미분류";
+    groups.set(key, (groups.get(key) || 0) + Number(item.amount || 0));
+  });
+  return [...groups.entries()]
+    .map(([label, amount]) => ({ label, amount, used: amount }))
+    .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label, "ko"));
+}
+
+function groupExpensesByDay(items) {
+  const groups = new Map();
+  items.filter((item) => item.type === "expense").forEach((item) => {
+    groups.set(item.date, (groups.get(item.date) || 0) + Number(item.amount || 0));
+  });
+  return [...groups.entries()]
+    .map(([date, amount]) => ({ label: date.slice(-2), amount, used: amount, detail: date }))
+    .sort((a, b) => a.detail.localeCompare(b.detail));
+}
+
+function visibleBudgetRows() {
+  const monthlyTransactions = byMonth(scopedTransactions(), state.selectedMonth);
+  if (budgetBoardTab === "income") return groupTransactionsByCategory(monthlyTransactions, "income");
+  if (budgetBoardTab === "calendar") return groupExpensesByDay(monthlyTransactions);
+
+  return [...state.budgets]
+    .sort((a, b) => `${a.scope}:${budgetOwnerName(a)}:${a.category}`.localeCompare(`${b.scope}:${budgetOwnerName(b)}:${b.category}`, "ko"))
+    .map((budget) => ({
+      label: budget.category,
+      amount: Number(budget.amount || 0),
+      used: budgetUsage(budget),
+      detail: budgetScopeLabel(budget)
+    }));
+}
+
+function budgetChartTitle() {
+  if (budgetBoardTab === "income") return "수입 항목별 금액";
+  if (budgetBoardTab === "calendar") return "날짜별 지출 금액";
+  return "지출 예산 설정 금액";
+}
+
+function renderBudgetChart(rows) {
+  const chart = document.querySelector("#budgetChart");
+  const graphToggle = document.querySelector("#budgetGraphToggle");
+  if (!chart) return;
+  if (graphToggle && !graphToggle.checked) {
+    chart.hidden = true;
+    return;
+  }
+
+  chart.hidden = false;
+  if (!rows.length) {
+    chart.innerHTML = `<div class="budget-chart-empty">${budgetBoardTab === "expense" ? "등록된 예산 항목이 없습니다." : "현재 월에 표시할 내역이 없습니다."}</div>`;
+    return;
+  }
+
+  const maxAmount = Math.max(...rows.map((row) => row.amount), 10000);
+  const roundedMax = Math.ceil(maxAmount / 10000 / 5) * 5;
+  const chartMaxAmount = roundedMax * 10000;
+  const axisValues = Array.from({ length: 6 }, (_, index) => Math.max(0, roundedMax - index * (roundedMax / 5)));
+  const unitLabel = "만원";
+
+  chart.innerHTML = `
+    <div class="budget-chart-title">
+      <strong>${escapeHtml(budgetChartTitle())}</strong>
+      <span>${monthLabelFormatter.format(monthDate(state.selectedMonth))} 기준</span>
+    </div>
+    <div class="budget-chart-board">
+      <div class="budget-y-axis" aria-hidden="true">
+        ${axisValues.map((value) => `<span>${Math.round(value)}</span>`).join("")}
+        <em>0(${unitLabel})</em>
+      </div>
+      <div class="budget-bar-grid">
+        ${rows
+          .map((row) => {
+            const height = Math.max(4, Math.min(100, (row.amount / chartMaxAmount) * 100));
+            const usedPercent = row.amount ? Math.min(100, (row.used / row.amount) * 100) : 0;
+            const title = `${row.label}: ${formatKrw(row.amount)}${budgetBoardTab === "expense" ? ` / 사용 ${formatKrw(row.used)}` : ""}`;
+            return `
+              <div class="budget-bar-column" title="${escapeHtml(title)}">
+                <div class="budget-bar-wrap">
+                  <span class="budget-bar-value">${formatKrw(row.amount)}</span>
+                  <span class="budget-bar" style="height:${height}%"></span>
+                </div>
+                <strong>${escapeHtml(row.label)}</strong>
+                ${budgetBoardTab === "expense" ? `<small>사용률 ${usedPercent.toFixed(0)}%</small>` : `<small>${escapeHtml(row.detail || "")}</small>`}
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function exportBudgetsToExcel() {
+  if (!window.XLSX) {
+    setFormStatus("#budgetStatus", "엑셀 저장 라이브러리를 불러오지 못했습니다.", "error");
+    return;
+  }
+
+  const rows = visibleBudgetRows();
+  const worksheetRows = rows.map((row) => ({
+    구분: budgetBoardTab === "expense" ? "지출 예산" : budgetBoardTab === "income" ? "수입" : "달력",
+    항목: row.label,
+    금액: row.amount,
+    사용금액: row.used || 0,
+    기준월: state.selectedMonth,
+    설명: row.detail || ""
+  }));
+  const worksheet = window.XLSX.utils.json_to_sheet(worksheetRows.length ? worksheetRows : [{ 구분: "", 항목: "", 금액: 0, 사용금액: 0, 기준월: state.selectedMonth, 설명: "" }]);
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "예산현황");
+  window.XLSX.writeFile(workbook, `cashnote-budget-${state.selectedMonth}.xlsx`);
+}
+
+function scrollToBudgetForm() {
+  resetBudgetForm();
+  document.querySelector("#budgetForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelector("#budgetForm input[name='category']")?.focus();
+}
+
 function renderBudgetItem(budget) {
   const used = budgetUsage(budget);
   const remaining = Math.max(0, budget.amount - used);
@@ -2815,16 +2939,25 @@ function renderBudgets() {
   state.budgets = normalizeBudgets(state.budgets);
   syncBudgetCategoryOptions();
   const budgets = [...state.budgets].sort((a, b) => `${a.scope}:${budgetOwnerName(a)}:${a.category}`.localeCompare(`${b.scope}:${budgetOwnerName(b)}:${b.category}`, "ko"));
+  const chartRows = visibleBudgetRows();
   const totalBudget = sum(budgets, () => true);
   const totalUsed = budgets.reduce((total, budget) => total + budgetUsage(budget), 0);
   const remaining = Math.max(0, totalBudget - totalUsed);
 
+  document.querySelectorAll("[data-budget-board-tab]").forEach((button) => {
+    const active = button.dataset.budgetBoardTab === budgetBoardTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
   document.querySelector("#budgetOverviewCount").textContent = `${budgets.length}개`;
   document.querySelector("#budgetOverviewHint").textContent =
-    totalBudget > 0
-      ? `총 예산 ${formatKrw(totalBudget)} 중 ${formatKrw(totalUsed)} 사용, ${formatKrw(remaining)} 남았습니다.`
-      : "예산 항목을 추가하면 현재 월 지출과 비교해 보여줍니다.";
+    budgetBoardTab === "expense"
+      ? totalBudget > 0
+        ? `총 예산 ${formatKrw(totalBudget)} 중 ${formatKrw(totalUsed)} 사용, ${formatKrw(remaining)} 남았습니다.`
+        : "예산 항목을 추가하면 현재 월 지출과 비교해 보여줍니다."
+      : `${budgetChartTitle()}을 그래프로 보여줍니다.`;
 
+  renderBudgetChart(chartRows);
   list.innerHTML = budgets.length
     ? budgets.map(renderBudgetItem).join("")
     : `<div class="list-item"><span>아직 등록된 예산 항목이 없습니다.</span></div>`;
@@ -4453,6 +4586,16 @@ function initBudgetControls() {
   document.querySelector("#deleteEditingBudget")?.addEventListener("click", () => {
     if (editingBudgetId) deleteBudget(editingBudgetId);
   });
+  document.querySelectorAll("[data-budget-board-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      budgetBoardTab = button.dataset.budgetBoardTab || "expense";
+      renderBudgets();
+    });
+  });
+  document.querySelector("#budgetGraphToggle")?.addEventListener("change", renderBudgets);
+  document.querySelector("#exportBudgetExcel")?.addEventListener("click", exportBudgetsToExcel);
+  document.querySelector("#printBudgetBoard")?.addEventListener("click", () => window.print());
+  document.querySelector("#addBudgetFromBoard")?.addEventListener("click", scrollToBudgetForm);
 
   budgetList.addEventListener("click", (event) => {
     const editButton = event.target.closest("[data-edit-budget]");

@@ -574,6 +574,187 @@ h2 {
   min-width: 0;
 }
 
+.budget-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.budget-board-tabs,
+.budget-board-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.budget-board-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.budget-board-tab {
+  min-height: 40px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.budget-board-tab.active {
+  color: var(--ink);
+  border-color: var(--theme);
+}
+
+.budget-graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.budget-graph-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--theme);
+}
+
+.budget-board-heading {
+  margin-bottom: 12px;
+}
+
+.budget-chart {
+  margin-bottom: 16px;
+  min-width: 0;
+}
+
+.budget-chart-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.budget-chart-title strong {
+  font-size: 15px;
+}
+
+.budget-chart-title span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.budget-chart-board {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  min-height: 300px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+}
+
+.budget-y-axis {
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
+  padding: 14px 0 28px 8px;
+  color: #9aa4a0;
+  font-size: 11px;
+}
+
+.budget-y-axis span,
+.budget-y-axis em {
+  font-style: normal;
+}
+
+.budget-y-axis em {
+  align-self: end;
+  white-space: nowrap;
+}
+
+.budget-bar-grid {
+  display: grid;
+  grid-auto-columns: minmax(86px, 1fr);
+  grid-auto-flow: column;
+  align-items: end;
+  gap: 18px;
+  min-width: max-content;
+  padding: 36px 18px 18px;
+  background-image: repeating-linear-gradient(to bottom, rgba(7, 20, 14, 0.07) 0 1px, transparent 1px 28px);
+}
+
+.budget-bar-column {
+  display: grid;
+  grid-template-rows: minmax(170px, 1fr) auto auto;
+  gap: 8px;
+  min-width: 86px;
+  text-align: center;
+}
+
+.budget-bar-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 170px;
+}
+
+.budget-bar {
+  display: block;
+  width: 14px;
+  min-height: 4px;
+  border-radius: 1px 1px 0 0;
+  background: #ff3b30;
+}
+
+.budget-bar-value {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  display: none;
+  transform: translateX(-50%);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.budget-bar-column:hover .budget-bar-value,
+.budget-bar-column:focus-within .budget-bar-value {
+  display: block;
+}
+
+.budget-bar-column strong {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.budget-bar-column small {
+  color: #899792;
+  font-size: 11px;
+}
+
+.budget-chart-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fbfcfb;
+}
+
 .budget-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2321,6 +2502,15 @@ textarea {
   .admin-layout {
     grid-template-columns: 1fr 1fr;
   }
+
+  .budget-board-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .budget-board-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2371,6 +2561,15 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .budget-chart-board {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .budget-bar-grid {
+    gap: 14px;
+    padding: 32px 14px 16px;
+  }
+
   .security-detail-heading {
     border-right: 0;
     border-bottom: 1px solid var(--line);
@@ -2396,5 +2595,34 @@ textarea {
 
   .bar-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .bottom-ad-banner,
+  .budget-layout > .form-panel,
+  .budget-board-actions,
+  .budget-list,
+  .notice-modal-backdrop {
+    display: none !important;
+  }
+
+  .app-shell,
+  .content,
+  .budget-layout {
+    display: block;
+    padding: 0;
+    background: #fff;
+  }
+
+  .budget-overview-panel {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .budget-chart-board {
+    overflow: visible;
   }
 }
