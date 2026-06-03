@@ -535,6 +535,100 @@ h2 {
   gap: 14px;
 }
 
+.budget-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.panel-description {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.budget-overview-panel {
+  min-width: 0;
+}
+
+.budget-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.budget-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.budget-card.over-budget {
+  border-color: #d78178;
+  background: #fff7f6;
+}
+
+.budget-card-main,
+.budget-amount-row,
+.budget-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.budget-card-main strong,
+.budget-card-main span {
+  display: block;
+}
+
+.budget-card-main strong {
+  font-size: 18px;
+}
+
+.budget-card-main span,
+.budget-amount-row {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.budget-card-main em {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.budget-card.over-budget .budget-card-main em {
+  color: var(--red);
+}
+
+.budget-progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.budget-progress-track div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.budget-card.over-budget .budget-progress-track div {
+  background: var(--red);
+}
+
+.budget-actions {
+  justify-content: flex-end;
+}
+
 .active-goals-panel {
   margin-bottom: 14px;
 }
@@ -2055,6 +2149,8 @@ textarea {
   .work-grid,
   .insight-layout,
   .badge-list,
+  .budget-layout,
+  .budget-list,
   .review-metric-grid,
   .goal-list,
   .goal-progress-list,
@@ -2094,6 +2190,8 @@ textarea {
   .insight-layout,
   .review-layout,
   .badge-list,
+  .budget-layout,
+  .budget-list,
   .review-metric-grid,
   .goal-list,
   .goal-progress-list,

@@ -29,6 +29,15 @@ const sampleSecurities = [
   { ticker: "SCHD", name: "Schwab US Dividend", qty: 42, avgCost: 25.8, monthlyDividend: 14.2 }
 ];
 
+const defaultBudgets = [
+  { category: "식비", amount: 400000 },
+  { category: "생활", amount: 200000 },
+  { category: "교통", amount: 100000 },
+  { category: "고정지출비", amount: 600000 },
+  { category: "의료", amount: 100000 },
+  { category: "문화", amount: 150000 }
+];
+
 const sampleData = {
   selectedMonth: "2025-10",
   selectedTransactionId: null,
@@ -48,6 +57,7 @@ const sampleData = {
   themeColor: "#28724f",
   auth: null,
   monthlyGoals: [],
+  budgets: defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item })),
   transactions: sampleTransactions.map((item) => ({ id: crypto.randomUUID(), ...item })),
   securities: sampleSecurities.map((item) => ({ id: crypto.randomUUID(), ...item }))
 };
@@ -93,6 +103,7 @@ let currentLedgerId = sessionLedgerId() || ledgerIdForEmail(currentUserEmail);
 let currentSessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY) || "";
 let state = loadState(currentUserEmail);
 let editingTransactionId = null;
+let editingBudgetId = null;
 let appStarted = false;
 let pendingGoal = null;
 let pendingGoalAction = "set";
@@ -106,7 +117,7 @@ let activeNoticeModalIds = [];
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
-const appViews = ["dashboard", "transactions", "investments", "insights", "settings", "admin"];
+const appViews = ["dashboard", "transactions", "budgets", "investments", "insights", "settings", "admin"];
 const securityTabs = ["details", "announcements", "projections"];
 
 const formatter = new Intl.NumberFormat("ko-KR", {
@@ -281,6 +292,7 @@ function createInitialStateForUser(email) {
   next.householdMembers = ["사용자"];
   next.authorByEmail = email ? { [email]: "사용자" } : {};
   next.monthlyGoals = [];
+  next.budgets = defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item }));
   next.transactions = [];
   next.securities = [];
   return next;
@@ -326,6 +338,7 @@ function loadState(email = currentUserEmail) {
       themeColor: isHexColor(parsed.themeColor) ? parsed.themeColor : sampleData.themeColor,
       auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
       monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
+      budgets: normalizeBudgets(parsed.budgets),
       transactions: deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : structuredClone(sampleData.transactions)).map((item) => ({
         ...item,
         author: item.author || householdMembers[0] || defaultAuthorName(parsed.profile)
@@ -352,6 +365,27 @@ function isTransactionTypeFilter(value) {
 
 function isLedgerScope(value) {
   return ["personal", "shared"].includes(value);
+}
+
+function normalizeBudgets(budgets) {
+  const source = Array.isArray(budgets) && budgets.length ? budgets : defaultBudgets;
+  const seen = new Set();
+  const normalized = [];
+
+  source.forEach((item) => {
+    const category = String(item?.category || "").trim();
+    const amount = Math.max(0, Number(item?.amount) || 0);
+    const key = category.toLowerCase();
+    if (!category || seen.has(key)) return;
+    seen.add(key);
+    normalized.push({
+      id: item?.id || crypto.randomUUID(),
+      category,
+      amount
+    });
+  });
+
+  return normalized.length ? normalized : defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item }));
 }
 
 function currentMonthValue() {
@@ -1043,6 +1077,7 @@ function startApp() {
   appStarted = true;
   showAppScene();
   initForms();
+  initBudgetControls();
   initProfileControls();
   initAccountControls();
   initAdminControls();
@@ -2552,6 +2587,118 @@ function renderTransactions() {
   renderRegisteredHistory(typeFilteredTransactions);
 }
 
+function expenseCategoriesForBudget() {
+  const savedCategories = state.transactions.filter((item) => item.type === "expense").map((item) => item.category);
+  const budgetCategories = (state.budgets || []).map((item) => item.category);
+  return [...new Set([...categoriesForType("expense"), ...budgetCategories, ...savedCategories])].filter(Boolean);
+}
+
+function syncBudgetCategoryOptions() {
+  const list = document.querySelector("#budgetCategoryOptions");
+  if (!list) return;
+  list.innerHTML = expenseCategoriesForBudget().map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
+}
+
+function budgetUsage(category) {
+  return sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => item.type === "expense" && item.category === category);
+}
+
+function renderBudgetItem(budget) {
+  const used = budgetUsage(budget.category);
+  const remaining = Math.max(0, budget.amount - used);
+  const percent = budget.amount ? Math.min(100, (used / budget.amount) * 100) : 0;
+  const exceeded = budget.amount > 0 && used > budget.amount;
+  const status = exceeded ? `${formatKrw(used - budget.amount)} 초과` : `${formatKrw(remaining)} 남음`;
+
+  return `
+    <article class="budget-card ${exceeded ? "over-budget" : ""}">
+      <div class="budget-card-main">
+        <div>
+          <strong>${escapeHtml(budget.category)}</strong>
+          <span>${scopeLabel()} · ${monthLabelFormatter.format(monthDate(state.selectedMonth))}</span>
+        </div>
+        <em>${escapeHtml(status)}</em>
+      </div>
+      <div class="budget-amount-row">
+        <span>사용 ${formatKrw(used)}</span>
+        <span>예산 ${formatKrw(budget.amount)}</span>
+      </div>
+      <div class="budget-progress-track" aria-label="${escapeHtml(budget.category)} 예산 사용률">
+        <div style="width:${percent}%"></div>
+      </div>
+      <div class="budget-actions">
+        <button class="secondary-button mini-button" type="button" data-edit-budget="${budget.id}">수정</button>
+        <button class="danger-button mini-button" type="button" data-delete-budget="${budget.id}">삭제</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderBudgets() {
+  const list = document.querySelector("#budgetList");
+  if (!list) return;
+
+  state.budgets = normalizeBudgets(state.budgets);
+  syncBudgetCategoryOptions();
+  const budgets = [...state.budgets].sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  const totalBudget = sum(budgets, () => true);
+  const totalUsed = sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => item.type === "expense");
+  const remaining = Math.max(0, totalBudget - totalUsed);
+
+  document.querySelector("#budgetOverviewCount").textContent = `${budgets.length}개`;
+  document.querySelector("#budgetOverviewHint").textContent =
+    totalBudget > 0
+      ? `총 예산 ${formatKrw(totalBudget)} 중 ${formatKrw(totalUsed)} 사용, ${formatKrw(remaining)} 남았습니다.`
+      : "예산 항목을 추가하면 현재 월 지출과 비교해 보여줍니다.";
+
+  list.innerHTML = budgets.length
+    ? budgets.map(renderBudgetItem).join("")
+    : `<div class="list-item"><span>아직 등록된 예산 항목이 없습니다.</span></div>`;
+}
+
+function setBudgetFormMode() {
+  const form = document.querySelector("#budgetForm");
+  if (!form) return;
+  const isEditing = Boolean(editingBudgetId);
+  document.querySelector("#budgetFormTitle").textContent = isEditing ? "예산 항목 수정" : "예산 항목 추가";
+  document.querySelector("#budgetSubmitButton").textContent = isEditing ? "수정 저장" : "예산 추가";
+  document.querySelector("#budgetEditActions").hidden = !isEditing;
+  form.classList.toggle("editing-form", isEditing);
+}
+
+function resetBudgetForm() {
+  const form = document.querySelector("#budgetForm");
+  if (!form) return;
+  editingBudgetId = null;
+  form.reset();
+  form.elements.budgetId.value = "";
+  setFormStatus("#budgetStatus");
+  setBudgetFormMode();
+}
+
+function startBudgetEdit(id) {
+  const budget = state.budgets.find((item) => item.id === id);
+  const form = document.querySelector("#budgetForm");
+  if (!budget || !form) return;
+  editingBudgetId = id;
+  form.elements.budgetId.value = id;
+  form.elements.category.value = budget.category;
+  form.elements.amount.value = budget.amount;
+  setFormStatus("#budgetStatus");
+  setBudgetFormMode();
+  form.elements.category.focus();
+}
+
+function deleteBudget(id) {
+  const budget = state.budgets.find((item) => item.id === id);
+  if (!budget) return;
+  state.budgets = state.budgets.filter((item) => item.id !== id);
+  if (editingBudgetId === id) resetBudgetForm();
+  persist();
+  renderBudgets();
+  setFormStatus("#budgetStatus", `${budget.category} 예산 항목을 삭제했습니다.`, "success");
+}
+
 function filteredTransactionsByType(transactions) {
   if (state.selectedTransactionType === "all") return transactions;
   return transactions.filter((item) => item.type === state.selectedTransactionType);
@@ -3451,6 +3598,7 @@ function render() {
   renderMemberSettings();
   renderDashboard();
   renderTransactions();
+  renderBudgets();
   renderSecurities();
   renderInsights();
   renderAdmin();
@@ -3788,6 +3936,76 @@ function initForms() {
     persist();
     render();
   });
+}
+
+function initBudgetControls() {
+  const budgetForm = document.querySelector("#budgetForm");
+  const budgetList = document.querySelector("#budgetList");
+  if (!budgetForm || !budgetList) return;
+
+  budgetForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(budgetForm);
+    const id = String(form.get("budgetId") || editingBudgetId || "");
+    const category = String(form.get("category") || "").trim();
+    const amount = Math.max(0, Number(form.get("amount")) || 0);
+
+    if (!category) {
+      setFormStatus("#budgetStatus", "예산 항목 이름을 입력해 주세요.", "error");
+      budgetForm.elements.category.focus();
+      return;
+    }
+
+    if (!amount) {
+      setFormStatus("#budgetStatus", "월 예산 금액을 입력해 주세요.", "error");
+      budgetForm.elements.amount.focus();
+      return;
+    }
+
+    state.budgets = normalizeBudgets(state.budgets);
+    const duplicate = state.budgets.find((item) => item.category === category && item.id !== id);
+    if (duplicate) {
+      setFormStatus("#budgetStatus", "이미 있는 예산 항목입니다. 기존 항목의 수정 버튼을 눌러 주세요.", "error");
+      return;
+    }
+
+    const budget = {
+      id: id || crypto.randomUUID(),
+      category,
+      amount
+    };
+    const index = state.budgets.findIndex((item) => item.id === budget.id);
+    if (index >= 0) {
+      state.budgets[index] = budget;
+    } else {
+      state.budgets.push(budget);
+    }
+
+    persist();
+    renderBudgets();
+    resetBudgetForm();
+    setFormStatus("#budgetStatus", index >= 0 ? `${category} 예산을 수정했습니다.` : `${category} 예산을 추가했습니다.`, "success");
+  });
+
+  document.querySelector("#cancelBudgetEdit")?.addEventListener("click", resetBudgetForm);
+  document.querySelector("#deleteEditingBudget")?.addEventListener("click", () => {
+    if (editingBudgetId) deleteBudget(editingBudgetId);
+  });
+
+  budgetList.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-budget]");
+    if (editButton) {
+      startBudgetEdit(editButton.dataset.editBudget);
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-delete-budget]");
+    if (deleteButton) {
+      deleteBudget(deleteButton.dataset.deleteBudget);
+    }
+  });
+
+  setBudgetFormMode();
 }
 
 function syncTransactionDateInput() {

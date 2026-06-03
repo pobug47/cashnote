@@ -72,6 +72,7 @@
         <nav class="nav-list" aria-label="주요 화면">
           <button class="nav-item active" data-view="dashboard">월 요약</button>
           <button class="nav-item" data-view="transactions">거래 내역</button>
+          <button class="nav-item" data-view="budgets">예산 설정</button>
           <button class="nav-item" data-view="investments">투자/배당</button>
           <button class="nav-item" data-view="insights">기록 회고</button>
           <button class="nav-item" data-view="settings">시스템 설정</button>
@@ -297,6 +298,44 @@
             </div>
             <div id="registeredHistory" class="categorized-history"></div>
           </section>
+        </section>
+
+        <section id="budgetsView" class="view">
+          <div class="budget-layout">
+            <form id="budgetForm" class="panel form-panel">
+              <div>
+                <h2 id="budgetFormTitle">예산 항목 추가</h2>
+                <p class="panel-description">기본 예산 항목을 사용하거나 필요한 항목을 직접 추가할 수 있습니다.</p>
+              </div>
+              <input name="budgetId" type="hidden" />
+              <label>
+                예산 항목
+                <input name="category" list="budgetCategoryOptions" type="text" placeholder="예: 식비, 생활, 교통" required />
+              </label>
+              <datalist id="budgetCategoryOptions"></datalist>
+              <label>
+                월 예산
+                <input name="amount" type="number" min="0" step="1000" placeholder="300000" required />
+              </label>
+              <button id="budgetSubmitButton" type="submit" class="primary-button">예산 추가</button>
+              <div id="budgetEditActions" class="form-actions" hidden>
+                <button id="cancelBudgetEdit" type="button" class="secondary-button">취소</button>
+                <button id="deleteEditingBudget" type="button" class="danger-button">삭제</button>
+              </div>
+              <p id="budgetStatus" class="form-status"></p>
+            </form>
+
+            <section class="panel budget-overview-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>월 예산 현황</h2>
+                  <span id="budgetOverviewHint">현재 월의 지출과 예산을 비교합니다.</span>
+                </div>
+                <span id="budgetOverviewCount"></span>
+              </div>
+              <div id="budgetList" class="budget-list"></div>
+            </section>
+          </div>
         </section>
 
         <section id="investmentsView" class="view">
