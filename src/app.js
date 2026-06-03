@@ -814,9 +814,7 @@ function renderMemberSettings() {
 
 function renderAdminAccess() {
   const adminNav = document.querySelector("#adminNavItem");
-  const resetButton = document.querySelector("#resetData");
   if (adminNav) adminNav.hidden = !currentAccountIsAdmin;
-  if (resetButton) resetButton.hidden = !currentAccountIsAdmin;
   if (!currentAccountIsAdmin && currentView() === "admin") {
     setView("dashboard", { replaceHistory: true });
   }
@@ -4748,22 +4746,5 @@ document.addEventListener("keydown", (event) => {
 
 document.querySelector("#prevMonth").addEventListener("click", () => shiftMonth(-1));
 document.querySelector("#nextMonth").addEventListener("click", () => shiftMonth(1));
-document.querySelector("#resetData").addEventListener("click", () => {
-  if (!currentAccountIsAdmin) {
-    showInfoModal({
-      title: "관리자 기능입니다",
-      message: "샘플 초기화는 관리자만 사용할 수 있습니다."
-    });
-    return;
-  }
-  const profile = state.profile;
-  const auth = state.auth;
-  const themeColor = state.themeColor;
-  state = { ...structuredClone(sampleData), profile, auth, themeColor };
-  editingTransactionId = null;
-  persist();
-  render();
-  resetTransactionForm();
-});
 
 initAuth();
