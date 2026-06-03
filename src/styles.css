@@ -67,6 +67,31 @@ body {
   line-height: 1.5;
 }
 
+.login-hint {
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-hint.info {
+  color: #d8e8dd;
+}
+
+.login-hint.warning {
+  color: #2c2110;
+  border-color: #f1c86e;
+  background: #fff2c8;
+}
+
+.login-hint.error {
+  color: #ffe9e6;
+  border-color: rgba(255, 166, 154, 0.55);
+  background: rgba(150, 50, 40, 0.45);
+}
+
 .login-card label {
   color: #d8e8dd;
 }

@@ -458,6 +458,7 @@ async function apiRequest(path, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(payload.error || payload.detail || "요청을 처리하지 못했습니다.");
+    error.status = response.status;
     error.payload = payload;
     throw error;
   }
@@ -1019,14 +1020,34 @@ function renderLedgerScopeControls() {
   });
 }
 
-function showLoginScene(message = null) {
+function showLoginScene(message = null, tone = "info") {
   document.querySelector("#loginScene").hidden = false;
   document.querySelector("#appShell").hidden = true;
   const hint = document.querySelector("#loginHint");
   if (hint) {
-    hint.textContent = message || "";
-    hint.hidden = !message;
+    hint.textContent = message || "기존 계정은 로그인하고, 처음 이용한다면 회원가입을 눌러 새 가계부를 만들어 주세요.";
+    hint.hidden = false;
+    hint.className = `login-hint ${tone}`;
   }
+}
+
+function loginFailureMessage(error) {
+  if (error.status === 401) {
+    return "이메일 또는 비밀번호가 맞지 않습니다. 비밀번호가 기억나지 않으면 비밀번호 찾기를 눌러 주세요.";
+  }
+  if (error.status === 428 || error.payload?.requiresVerification) {
+    return "아직 가입되지 않은 이메일입니다. 처음 이용한다면 회원가입을 눌러 이메일 인증 후 계정을 만들어 주세요.";
+  }
+  if (error.status === 404) {
+    return "초대 코드를 찾을 수 없습니다. 초대 코드를 다시 확인하거나 초대 없이 회원가입해 주세요.";
+  }
+  if (error.status === 409) {
+    return error.message || "이미 다른 가계부와 연결된 계정입니다. 로그인 정보나 초대 코드를 확인해 주세요.";
+  }
+  if (error.status === 500 || error.status === 503) {
+    return `서버 연결 또는 DB 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요. ${error.message || ""}`.trim();
+  }
+  return error.message || "로그인에 실패했습니다. 입력한 이메일과 비밀번호를 다시 확인해 주세요.";
 }
 
 function setInviteCodeFieldVisible(visible) {
@@ -1118,7 +1139,7 @@ function initAuth() {
     const rawEmail = String(form.get("email") || "");
     const emailError = emailInputError(rawEmail);
     if (emailError) {
-      showLoginScene(emailError);
+      showLoginScene(emailError, "error");
       loginForm.elements.email.focus();
       return;
     }
@@ -1127,12 +1148,19 @@ function initAuth() {
     const inviteCode = normalizeInviteCode(form.get("inviteCode"));
 
     if (!password) {
-      showLoginScene("비밀번호를 입력해 주세요.");
+      showLoginScene("비밀번호를 입력해 주세요.", "error");
       loginForm.elements.password.focus();
       return;
     }
 
+    const submitButton = loginForm.querySelector('button[type="submit"]');
+    const originalSubmitText = submitButton?.textContent || "로그인";
     try {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "로그인 확인 중...";
+      }
+      showLoginScene("입력한 계정 정보를 확인하고 있습니다.", "info");
       const result = await apiRequest("/api/auth/login", {
         method: "POST",
         body: {
@@ -1152,13 +1180,19 @@ function initAuth() {
       startApp();
     } catch (error) {
       if (inviteCode) setInviteCodeFieldVisible(true);
-      if (error.payload?.requiresVerification) {
-        showLoginScene("가입되지 않은 이메일입니다. 회원가입을 눌러 새 계정을 만들어 주세요.");
+      const message = loginFailureMessage(error);
+      if (error.status === 428 || error.payload?.requiresVerification) {
+        showLoginScene(message, "warning");
         document.querySelector("#openSignupButton").focus();
       } else {
         loginForm.elements.password.value = "";
         loginForm.elements.password.focus();
-        showLoginScene(error.message);
+        showLoginScene(message, "error");
+      }
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalSubmitText;
       }
     }
   });
@@ -1183,7 +1217,7 @@ async function resumeSession() {
     currentLedgerId = null;
     currentSessionToken = "";
     currentAccountIsAdmin = false;
-    showLoginScene(`서버 DB에서 로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`);
+    showLoginScene(`서버 DB에서 로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`, "error");
   }
 }
 
