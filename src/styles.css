@@ -1796,6 +1796,78 @@ textarea {
   color: #6d3f07;
 }
 
+.analysis-panel {
+  background: linear-gradient(180deg, rgba(var(--theme-rgb), 0.045), var(--surface));
+}
+
+.analysis-engine-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--theme-dark);
+  background: var(--green-soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.analysis-narrative {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analysis-card {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.analysis-card strong,
+.analysis-card p,
+.analysis-card span {
+  display: block;
+}
+
+.analysis-card strong {
+  font-size: 16px;
+}
+
+.analysis-card p {
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.analysis-card span {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.analysis-card.good {
+  border-color: var(--theme-accent);
+  background: var(--green-soft);
+}
+
+.analysis-card.warning {
+  border-color: #e5bb65;
+  background: #fff8e8;
+}
+
+.analysis-card.danger {
+  border-color: #d78178;
+  background: #fff4f3;
+}
+
 .wide-review-panel {
   grid-column: 1 / -1;
 }
@@ -2098,6 +2170,46 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+}
+
+.recommendation-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.recommendation-item span,
+.recommendation-item strong,
+.recommendation-item p,
+.recommendation-item small {
+  display: block;
+}
+
+.recommendation-item span {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--theme-dark);
+  background: var(--green-soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.recommendation-item strong {
+  margin-top: 8px;
+  font-size: 16px;
+}
+
+.recommendation-item p {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.recommendation-item small {
+  color: var(--green);
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .signal-item {
@@ -2619,6 +2731,15 @@ textarea {
 
   .security-detail-card {
     grid-template-columns: 1fr;
+  }
+
+  .analysis-narrative,
+  .recommendation-item {
+    grid-template-columns: 1fr;
+  }
+
+  .recommendation-item small {
+    white-space: normal;
   }
 
   .budget-chart-board {

@@ -3906,6 +3906,7 @@ function renderMonthlyReview(monthTransactions, previousTransactions) {
   const categoryEntries = sortedExpenseEntries(monthTransactions);
   const paymentEntries = sortedPaymentEntries(monthTransactions);
   const increasedCategories = increasedExpenseCategories(monthTransactions, previousTransactions);
+  const analysis = buildAnalysisEngine(monthTransactions, previousTransactions);
 
   document.querySelector("#reviewMonthLabel").textContent = `${monthLabelFormatter.format(monthDate(state.selectedMonth))} 기준 자동 분석`;
   document.querySelector("#reviewSummaryMetrics").innerHTML = [
@@ -3926,10 +3927,181 @@ function renderMonthlyReview(monthTransactions, previousTransactions) {
     .join("");
 
   renderGoalProgressPanel("#insightGoalsPanel", "#insightGoalProgress", "#insightGoalsHint");
+  renderAnalysisNarrative(analysis);
   renderCategoryDiagnosis(categoryEntries, paymentEntries, increasedCategories, expense);
   renderRiskSignals({ income, expense, saving, balance, savingRate, expenseRate, categoryEntries, increasedCategories, goalProgresses: activeGoalsForMonth().map((goal) => goalProgress(goal)) });
-  renderRecommendations({ income, expense, saving, balance, savingRate, expenseRate, categoryEntries, increasedCategories, previousSaving });
+  renderRecommendations({ income, expense, saving, balance, savingRate, expenseRate, categoryEntries, increasedCategories, previousSaving, analysis });
   renderNextGoals({ income, expense, saving, balance, savingRate, categoryEntries });
+}
+
+function buildAnalysisEngine(monthTransactions, previousTransactions) {
+  const income = sum(monthTransactions, (item) => item.type === "income");
+  const expense = sum(monthTransactions, (item) => item.type === "expense");
+  const saving = sum(monthTransactions, (item) => item.type === "saving");
+  const balance = income - expense - saving;
+  const previousExpense = sum(previousTransactions, (item) => item.type === "expense");
+  const previousSaving = sum(previousTransactions, (item) => item.type === "saving");
+  const savingRate = income ? (saving / income) * 100 : 0;
+  const expenseRate = income ? (expense / income) * 100 : 0;
+  const categoryEntries = sortedExpenseEntries(monthTransactions);
+  const paymentEntries = sortedPaymentEntries(monthTransactions);
+  const increasedCategories = increasedExpenseCategories(monthTransactions, previousTransactions);
+  const recurringCandidates = recurringExpenseCandidates();
+  const overBudgetItems = budgetOveragesForMonth();
+  const topCategory = categoryEntries[0];
+  const topPayment = paymentEntries[0];
+  const topCategoryRatio = topCategory && expense ? (topCategory[1] / expense) * 100 : 0;
+  const expenseChange = expense - previousExpense;
+  const savingChange = saving - previousSaving;
+
+  const signals = [];
+  if (!monthTransactions.length) {
+    signals.push({
+      tone: "neutral",
+      title: "분석할 거래가 아직 부족해요",
+      body: "이번 달 거래를 5건 이상 입력하면 지출 패턴과 추천 목표를 더 구체적으로 만들 수 있어요.",
+      evidence: "현재 월 거래 0건"
+    });
+  }
+  if (income > 0 && expenseRate >= 70) {
+    signals.push({
+      tone: "danger",
+      title: "수입 대비 지출이 높은 달이에요",
+      body: `이번 달 지출률이 ${percentLabel(expenseRate)}라서 다음 월급 전 가용 잔액이 빠르게 줄 수 있어요.`,
+      evidence: `${formatKrw(income)} 수입 중 ${formatKrw(expense)} 사용`
+    });
+  }
+  if (income > 0 && savingRate < 10) {
+    signals.push({
+      tone: "warning",
+      title: "저축/투자 분리가 약해요",
+      body: "저축률 10%를 먼저 목표로 두면 가계부 흐름이 안정적으로 바뀌기 쉬워요.",
+      evidence: `현재 저축률 ${percentLabel(savingRate)}`
+    });
+  }
+  if (topCategory && topCategoryRatio >= 30) {
+    signals.push({
+      tone: "warning",
+      title: `${topCategory[0]} 지출 비중이 커요`,
+      body: "한 항목에 지출이 몰리면 예산 조정 효과가 커서 먼저 점검할 가치가 있어요.",
+      evidence: `전체 지출의 ${percentLabel(topCategoryRatio)} · ${formatKrw(topCategory[1])}`
+    });
+  }
+  if (expenseChange > 0 && previousExpense > 0) {
+    signals.push({
+      tone: expenseChange >= 100000 ? "warning" : "neutral",
+      title: "전월보다 지출이 늘었어요",
+      body: increasedCategories[0] ? `${increasedCategories[0].category} 항목 증가가 가장 큽니다.` : "늘어난 항목을 반복 지출과 일회성 지출로 나눠보면 좋아요.",
+      evidence: `전월 대비 ${formatKrw(expenseChange)} 증가`
+    });
+  }
+  if (savingChange > 0 && previousSaving > 0) {
+    signals.push({
+      tone: "good",
+      title: "저축/투자 흐름이 좋아졌어요",
+      body: "전월보다 저축/투자가 늘어난 흐름은 다음 달 목표로 이어가기 좋습니다.",
+      evidence: `전월 대비 ${formatKrw(savingChange)} 증가`
+    });
+  }
+  if (topPayment) {
+    signals.push({
+      tone: "neutral",
+      title: `${topPayment[0]} 사용 비중을 확인해보세요`,
+      body: "결제수단별 지출을 보면 카드값, 계좌이체, 현금 흐름을 나눠 관리하기 쉬워요.",
+      evidence: `${topPayment[0]} ${formatKrw(topPayment[1])}`
+    });
+  }
+  if (recurringCandidates.length) {
+    signals.push({
+      tone: "neutral",
+      title: "반복 지출 후보가 있어요",
+      body: `${recurringCandidates.slice(0, 2).map((item) => item.label).join(", ")} 항목은 매달 반복되는지 확인해볼 만합니다.`,
+      evidence: `${recurringCandidates[0].months}개월 이상 반복 감지`
+    });
+  }
+  if (overBudgetItems.length) {
+    signals.push({
+      tone: "danger",
+      title: "예산을 넘긴 항목이 있어요",
+      body: `${overBudgetItems[0].category} 예산을 초과했습니다. 관련 거래부터 확인해보세요.`,
+      evidence: `${formatKrw(overBudgetItems[0].over)} 초과`
+    });
+  }
+  if (balance > 0 && income > 0) {
+    signals.push({
+      tone: "good",
+      title: "이번 달 가용 잔액이 남아 있어요",
+      body: "남은 금액 중 일부를 비상금이나 추가 저축으로 분리하면 다음 달 부담이 줄어듭니다.",
+      evidence: `가용 잔액 ${formatKrw(balance)}`
+    });
+  }
+
+  return {
+    income,
+    expense,
+    saving,
+    balance,
+    expenseRate,
+    savingRate,
+    categoryEntries,
+    paymentEntries,
+    increasedCategories,
+    recurringCandidates,
+    overBudgetItems,
+    signals: signals.slice(0, 6)
+  };
+}
+
+function recurringExpenseCandidates() {
+  const byKey = new Map();
+  scopedTransactions()
+    .filter((item) => item.type === "expense")
+    .forEach((item) => {
+      const month = item.date.slice(0, 7);
+      const memoKey = String(item.memo || "").trim().replace(/\d+/g, "").slice(0, 18);
+      const key = `${item.category || "미분류"}:${memoKey || paymentStatLabel(item)}`;
+      const current = byKey.get(key) || { label: item.category || "미분류", months: new Set(), total: 0 };
+      current.months.add(month);
+      current.total += Number(item.amount || 0);
+      byKey.set(key, current);
+    });
+
+  return [...byKey.values()]
+    .map((item) => ({ ...item, months: item.months.size }))
+    .filter((item) => item.months >= 2)
+    .sort((a, b) => b.months - a.months || b.total - a.total);
+}
+
+function budgetOveragesForMonth() {
+  return (state.budgets || [])
+    .map((budget) => {
+      const used = budgetUsage(budget);
+      return { category: budget.category, used, budget: budget.amount, over: used - budget.amount };
+    })
+    .filter((item) => item.budget > 0 && item.over > 0)
+    .sort((a, b) => b.over - a.over);
+}
+
+function renderAnalysisNarrative(analysis) {
+  const target = document.querySelector("#analysisNarrative");
+  if (!target) return;
+  const signals = analysis.signals.length
+    ? analysis.signals
+    : [{ tone: "neutral", title: "분석 결과를 준비 중이에요", body: "거래를 더 입력하면 흐름과 추천 근거를 자동으로 만들어 드립니다.", evidence: "거래 데이터 부족" }];
+
+  target.innerHTML = signals
+    .map(
+      (signal) => `
+        <article class="analysis-card ${signal.tone}">
+          <div>
+            <strong>${escapeHtml(signal.title)}</strong>
+            <p>${escapeHtml(signal.body)}</p>
+          </div>
+          <span>${escapeHtml(signal.evidence)}</span>
+        </article>
+      `
+    )
+    .join("");
 }
 
 function sortedExpenseEntries(transactions) {
@@ -4020,22 +4192,98 @@ function renderRiskSignals({ income, expense, balance, savingRate, expenseRate, 
   document.querySelector("#riskSignals").innerHTML = risks.map(renderSignalItem).join("");
 }
 
-function renderRecommendations({ income, expense, saving, balance, savingRate, expenseRate, categoryEntries, increasedCategories, previousSaving }) {
+function renderRecommendations({ income, expense, saving, balance, savingRate, expenseRate, categoryEntries, increasedCategories, previousSaving, analysis }) {
   const recommendations = [];
   const topCategory = categoryEntries[0];
 
   if (savingRate < 10 && income > 0) {
     const targetSaving = Math.ceil((income * 0.1) / 10000) * 10000;
-    recommendations.push(`다음 달에는 월급일 직후 ${formatKrw(targetSaving)}을 먼저 저축/투자로 분리해보세요.`);
+    recommendations.push({
+      priority: "높음",
+      title: "월급일 직후 선저축을 먼저 분리하세요",
+      body: `다음 달에는 ${formatKrw(targetSaving)}을 먼저 저축/투자로 이동해보세요.`,
+      evidence: `현재 저축률 ${percentLabel(savingRate)}`
+    });
   }
-  if (expenseRate >= 70) recommendations.push("이번 달 고정비와 식비를 먼저 점검해서 지출률을 70% 아래로 낮춰보세요.");
-  if (topCategory) recommendations.push(`${topCategory[0]} 항목이 가장 큽니다. 다음 달 예산을 ${formatKrw(Math.max(0, Math.floor(topCategory[1] * 0.9 / 1000) * 1000))} 정도로 잡아보세요.`);
-  if (increasedCategories[0]) recommendations.push(`${increasedCategories[0].category} 지출이 전월보다 늘었습니다. 반복 지출인지 일회성 지출인지 구분해보세요.`);
-  if (balance > 100000) recommendations.push(`남은 가용 잔액 중 일부를 비상금이나 추가 투자금으로 분리할 수 있어요. 우선 ${formatKrw(Math.floor(balance * 0.3 / 10000) * 10000)} 정도가 부담이 적습니다.`);
-  if (saving > previousSaving && previousSaving > 0) recommendations.push("저축/투자가 전월보다 늘었습니다. 이 흐름은 다음 달에도 유지하는 게 좋아요.");
-  if (!recommendations.length) recommendations.push("거래를 조금 더 등록하면 더 구체적인 추천을 만들 수 있어요.");
+  if (expenseRate >= 70) {
+    recommendations.push({
+      priority: "높음",
+      title: "지출률을 70% 아래로 낮춰보세요",
+      body: "고정비, 식비, 카드 결제 항목부터 이번 달 거래를 확인하는 게 효과적입니다.",
+      evidence: `수입 대비 지출 ${percentLabel(expenseRate)}`
+    });
+  }
+  if (topCategory) {
+    recommendations.push({
+      priority: "중간",
+      title: `${topCategory[0]} 예산을 먼저 조정하세요`,
+      body: `다음 달 ${topCategory[0]} 예산을 ${formatKrw(Math.max(0, Math.floor(topCategory[1] * 0.9 / 1000) * 1000))} 정도로 잡아보세요.`,
+      evidence: `이번 달 ${formatKrw(topCategory[1])} 사용`
+    });
+  }
+  if (increasedCategories[0]) {
+    recommendations.push({
+      priority: increasedCategories[0].diff >= 100000 ? "높음" : "중간",
+      title: `${increasedCategories[0].category} 증가 원인을 분리하세요`,
+      body: "반복 지출인지 일회성 지출인지 구분하면 다음 달 예산을 더 정확히 잡을 수 있어요.",
+      evidence: `전월 대비 ${formatKrw(increasedCategories[0].diff)} 증가`
+    });
+  }
+  if (analysis?.overBudgetItems?.[0]) {
+    recommendations.push({
+      priority: "높음",
+      title: `${analysis.overBudgetItems[0].category} 예산 초과 거래를 확인하세요`,
+      body: "예산을 넘긴 항목은 새 거래를 등록할 때 같은 예산을 선택했는지도 같이 확인해보세요.",
+      evidence: `${formatKrw(analysis.overBudgetItems[0].over)} 초과`
+    });
+  }
+  if (analysis?.recurringCandidates?.[0]) {
+    recommendations.push({
+      priority: "낮음",
+      title: "반복 지출 후보를 고정비로 옮길지 검토하세요",
+      body: `${analysis.recurringCandidates[0].label}처럼 반복되는 항목은 예산 항목을 따로 두면 관리하기 쉬워요.`,
+      evidence: `${analysis.recurringCandidates[0].months}개월 반복 감지`
+    });
+  }
+  if (balance > 100000) {
+    recommendations.push({
+      priority: "중간",
+      title: "남은 가용 잔액 일부를 분리하세요",
+      body: `비상금이나 추가 투자금으로 ${formatKrw(Math.floor(balance * 0.3 / 10000) * 10000)} 정도를 옮기면 부담이 적습니다.`,
+      evidence: `가용 잔액 ${formatKrw(balance)}`
+    });
+  }
+  if (saving > previousSaving && previousSaving > 0) {
+    recommendations.push({
+      priority: "유지",
+      title: "저축/투자 증가 흐름을 유지하세요",
+      body: "이번 달 좋아진 흐름은 다음 달 추천 목표로 이어가기 좋습니다.",
+      evidence: `전월 대비 ${formatKrw(saving - previousSaving)} 증가`
+    });
+  }
+  if (!recommendations.length) {
+    recommendations.push({
+      priority: "시작",
+      title: "거래를 조금 더 등록해 주세요",
+      body: "거래 5건 이상, 수입 1건 이상이 있으면 더 구체적인 추천을 만들 수 있어요.",
+      evidence: "분석 데이터 부족"
+    });
+  }
 
-  document.querySelector("#recommendationList").innerHTML = recommendations.map((item) => `<article class="recommendation-item">${escapeHtml(item)}</article>`).join("");
+  document.querySelector("#recommendationList").innerHTML = recommendations.slice(0, 6).map(renderRecommendationItem).join("");
+}
+
+function renderRecommendationItem(item) {
+  return `
+    <article class="recommendation-item">
+      <div>
+        <span>${escapeHtml(item.priority)}</span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.body)}</p>
+      </div>
+      <small>${escapeHtml(item.evidence)}</small>
+    </article>
+  `;
 }
 
 function renderNextGoals({ income, expense, balance, savingRate, categoryEntries }) {

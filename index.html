@@ -10,7 +10,7 @@
     <title>자산 보드</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./src/styles.css?v=26" />
+    <link rel="stylesheet" href="./src/styles.css?v=27" />
   </head>
   <body>
     <section id="loginScene" class="login-scene">
@@ -455,6 +455,17 @@
               <div id="reviewSummaryMetrics" class="review-metric-grid"></div>
             </section>
 
+            <section class="panel review-panel analysis-panel wide-review-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>자체 분석 요약</h2>
+                  <span>거래 패턴을 계산해서 핵심 판단과 근거를 보여줍니다.</span>
+                </div>
+                <span class="analysis-engine-badge">규칙 기반</span>
+              </div>
+              <div id="analysisNarrative" class="analysis-narrative"></div>
+            </section>
+
             <section id="insightGoalsPanel" class="panel review-panel wide-review-panel" hidden>
               <div class="panel-heading">
                 <div>
@@ -897,7 +908,7 @@
     </div>
 
     <script src="./node_modules/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="./src/app.js?v=26"></script>
-    <script src="./src/pwa.js?v=26"></script>
+    <script src="./src/app.js?v=27"></script>
+    <script src="./src/pwa.js?v=27"></script>
   </body>
 </html>
