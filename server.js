@@ -449,6 +449,89 @@ function appBaseUrl(req) {
   return `${protocol}://${host}`;
 }
 
+function renderAdPreviewPage(req) {
+  const baseUrl = appBaseUrl(req);
+  const client = String(process.env.ADSENSE_CLIENT || "").trim();
+  const slot = String(process.env.ADSENSE_BOTTOM_BANNER_SLOT || process.env.ADSENSE_SLOT || "").trim();
+  const appUrl = baseUrl || "/";
+  const adsTxtUrl = baseUrl ? `${baseUrl}/ads.txt` : "/ads.txt";
+  const adSnippet = client && slot ? `
+      <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${escapeHtml(client)}" crossorigin="anonymous"></script>
+      <ins class="adsbygoogle"
+        style="display:block;min-height:120px"
+        data-ad-client="${escapeHtml(client)}"
+        data-ad-slot="${escapeHtml(slot)}"
+        data-ad-format="auto"
+        data-full-width-responsive="true"></ins>
+      <script>
+        window.adsbygoogle = window.adsbygoogle || [];
+        window.adsbygoogle.push({});
+      </script>
+  ` : `
+      <div class="empty-ad">AdSense client 또는 slot 값이 아직 설정되지 않았습니다.</div>
+  `;
+
+  return `<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index,follow" />
+    <title>Cashnote 광고 미리보기</title>
+    <style>
+      :root { color-scheme: light; --green: #28724f; --line: #d7ded8; --ink: #07140e; --muted: #5f7067; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; background: #f4f7f3; color: var(--ink); }
+      main { max-width: 960px; margin: 0 auto; padding: 48px 20px; }
+      .hero, .ad-card, .info-card { border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 18px 50px rgba(23, 45, 33, 0.08); }
+      .hero { padding: 34px; background: linear-gradient(135deg, #103824, #4d8a68); color: #fff; }
+      .eyebrow { display: inline-block; margin-bottom: 14px; padding: 7px 11px; border-radius: 999px; background: rgba(255,255,255,0.16); font-weight: 700; }
+      h1 { margin: 0; font-size: 34px; line-height: 1.2; }
+      p { margin: 12px 0 0; color: inherit; line-height: 1.65; }
+      .hero p { max-width: 680px; color: rgba(255,255,255,0.88); }
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0 0; }
+      .info-card { padding: 18px; }
+      .info-card strong { display: block; margin-bottom: 7px; }
+      .info-card span { color: var(--muted); font-size: 14px; line-height: 1.55; }
+      .ad-card { margin-top: 18px; padding: 18px; min-height: 160px; }
+      .ad-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+      .ad-title h2 { margin: 0; font-size: 20px; }
+      .ad-title span { color: var(--muted); font-size: 13px; }
+      .adsbygoogle { width: 100%; min-height: 120px; }
+      .empty-ad { display: grid; min-height: 120px; place-items: center; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); }
+      .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+      a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--green); font-weight: 700; text-decoration: none; background: #fff; }
+      @media (max-width: 720px) { main { padding: 26px 14px; } h1 { font-size: 26px; } .hero { padding: 24px; } .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <span class="eyebrow">Cashnote</span>
+        <h1>가계부, 예산, 배당 기록을 함께 관리하는 자산 보드</h1>
+        <p>이 페이지는 AdSense가 공개적으로 접근할 수 있는 서비스 소개 및 광고 미리보기 페이지입니다. 로그인이나 사용자 데이터 없이 광고 코드와 사이트 접근 상태를 확인합니다.</p>
+      </section>
+      <section class="grid" aria-label="서비스 요약">
+        <div class="info-card"><strong>가계부 기록</strong><span>수입, 지출, 저축, 투자 내역을 월별로 정리합니다.</span></div>
+        <div class="info-card"><strong>가족 가계부</strong><span>작성자를 나누어 개인과 공동 지출 흐름을 확인합니다.</span></div>
+        <div class="info-card"><strong>예산 관리</strong><span>항목별 예산과 사용 금액을 비교해 다음 달 목표를 잡습니다.</span></div>
+      </section>
+      <section class="ad-card" aria-label="광고 미리보기">
+        <div class="ad-title">
+          <h2>AdSense 광고 슬롯</h2>
+          <span>${client && slot ? "설정됨" : "설정 필요"}</span>
+        </div>
+        ${adSnippet}
+      </section>
+      <nav class="links" aria-label="확인 링크">
+        <a href="${escapeHtml(appUrl)}">서비스로 이동</a>
+        <a href="${escapeHtml(adsTxtUrl)}">ads.txt 확인</a>
+      </nav>
+    </main>
+  </body>
+</html>`;
+}
+
 async function sendVerificationEmail(email, code, purpose) {
   if (!smtpConfigured()) {
     throw new Error(emailDeliveryUnavailableMessage);
@@ -850,6 +933,15 @@ async function getDividendData(ticker, month, basis = "pay") {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = decodeURIComponent(url.pathname);
+
+  if (pathname === "/ad-preview" || pathname === "/adsense-preview") {
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache"
+    });
+    res.end(renderAdPreviewPage(req));
+    return;
+  }
 
   if (pathname === "/api/health") {
     try {
