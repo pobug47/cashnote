@@ -15,6 +15,8 @@ const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 const verificationTtlMs = 1000 * 60 * 10;
 const verificationCooldownMs = 1000 * 60;
 const passwordMinLength = 8;
+const maxJsonBodyBytes = 10 * 1024 * 1024;
+const maxSupportAttachmentBytes = 2 * 1024 * 1024;
 const noticeSeverities = ["info", "warning", "maintenance"];
 const supportStatuses = ["received", "processing", "done"];
 const emailDeliveryUnavailableMessage = "이메일 인증 발송이 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.";
@@ -71,8 +73,44 @@ const mimeTypes = {
 };
 
 function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  if (statusCode >= 500 && process.env.NODE_ENV === "production" && payload && typeof payload === "object" && "detail" in payload) {
+    payload = { ...payload };
+    delete payload.detail;
+  }
+  res.writeHead(statusCode, securityHeaders({ "Content-Type": "application/json; charset=utf-8" }));
   res.end(JSON.stringify(payload));
+}
+
+function securityHeaders(headers = {}) {
+  return {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    ...headers
+  };
+}
+
+function isPublicStaticPath(requestedPath) {
+  if (requestedPath === "/index.html" || requestedPath === "/manifest.webmanifest" || requestedPath === "/service-worker.js") return true;
+  if (requestedPath === "/node_modules/xlsx/dist/xlsx.full.min.js") return true;
+  if (["/src/app.js", "/src/styles.css", "/src/pwa.js"].includes(requestedPath)) return true;
+  if (requestedPath.startsWith("/assets/")) return !requestedPath.split("/").some((part) => part.startsWith("."));
+  return false;
+}
+
+function safeDecodePathname(pathname) {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+}
+
+function resolveStaticFilePath(requestedPath) {
+  const filePath = path.resolve(root, requestedPath.replace(/^\/+/, ""));
+  const relativePath = path.relative(root, filePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return null;
+  return filePath;
 }
 
 function adsensePublisherId() {
@@ -128,14 +166,21 @@ function rateLimitExceeded(req, res, action, subject, options) {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
+    let rejected = false;
     req.on("data", (chunk) => {
-      chunks.push(chunk);
-      if (Buffer.concat(chunks).length > 20 * 1024 * 1024) {
+      if (rejected) return;
+      totalBytes += chunk.length;
+      if (totalBytes > maxJsonBodyBytes) {
+        rejected = true;
         reject(new Error("Request body is too large"));
         req.destroy();
+        return;
       }
+      chunks.push(chunk);
     });
     req.on("end", () => {
+      if (rejected) return;
       if (!chunks.length) {
         resolve({});
         return;
@@ -366,6 +411,29 @@ function publicSupportTicket(row) {
         updatedAt: row.updatedAt || null
       }
     : null;
+}
+
+function normalizeSupportAttachment(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const name = String(value.name || "attachment").trim().slice(0, 120) || "attachment";
+  const type = String(value.type || "").trim().toLowerCase();
+  const dataUrl = String(value.dataUrl || "");
+  if (!/^image\/(png|jpe?g|gif|webp)$/.test(type)) {
+    throw new Error("첨부 이미지는 PNG, JPG, GIF, WEBP만 등록할 수 있습니다.");
+  }
+
+  const match = dataUrl.match(/^data:(image\/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match || match[1].toLowerCase() !== type) {
+    throw new Error("첨부 이미지 형식이 올바르지 않습니다.");
+  }
+
+  const size = Buffer.byteLength(match[2], "base64");
+  if (size > maxSupportAttachmentBytes) {
+    throw new Error("첨부 이미지는 2MB 이하만 등록할 수 있습니다.");
+  }
+
+  return { name, type, size, dataUrl };
 }
 
 function requireAdminSession(session, res) {
@@ -932,13 +1000,18 @@ async function getDividendData(ticker, month, basis = "pay") {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = decodeURIComponent(url.pathname);
+  const pathname = safeDecodePathname(url.pathname);
+  if (!pathname) {
+    res.writeHead(400, securityHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
+    res.end("Bad request");
+    return;
+  }
 
   if (pathname === "/ad-preview" || pathname === "/adsense-preview") {
-    res.writeHead(200, {
+    res.writeHead(200, securityHeaders({
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-cache"
-    });
+    }));
     res.end(renderAdPreviewPage(req));
     return;
   }
@@ -967,7 +1040,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/ads.txt") {
     const publisherId = adsensePublisherId();
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(200, securityHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end(publisherId ? `google.com, ${publisherId}, DIRECT, f08c47fec0942fa0\n` : "");
     return;
   }
@@ -1199,7 +1272,13 @@ const server = http.createServer(async (req, res) => {
       const title = String(body.title || "").trim();
       const ticketBody = String(body.body || "").trim();
       const author = String(body.author || "").trim();
-      const attachment = body.attachment && typeof body.attachment === "object" ? body.attachment : null;
+      let attachment;
+      try {
+        attachment = normalizeSupportAttachment(body.attachment);
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+        return;
+      }
       const db = await getDb();
       const session = await getSession(db, req);
       if (!session) {
@@ -1248,7 +1327,13 @@ const server = http.createServer(async (req, res) => {
       const category = String(body.category || "불편 사항").trim();
       const title = String(body.title || "").trim();
       const ticketBody = String(body.body || "").trim();
-      const attachment = body.attachment && typeof body.attachment === "object" ? body.attachment : null;
+      let attachment;
+      try {
+        attachment = normalizeSupportAttachment(body.attachment);
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+        return;
+      }
       const db = await getDb();
       const session = await getSession(db, req);
       if (!session) {
@@ -1694,11 +1779,11 @@ const server = http.createServer(async (req, res) => {
       const state = (await getLedgerState(db, session.ledgerId)) || {};
       const buffer = buildLedgerExportWorkbook(state);
       const fileDate = new Date().toISOString().slice(0, 10);
-      res.writeHead(200, {
+      res.writeHead(200, securityHeaders({
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="cashnote-backup-${fileDate}.xlsx"`,
         "Content-Length": buffer.length
-      });
+      }));
       res.end(buffer);
     } catch (error) {
       sendJson(res, 500, { error: "내 데이터를 내보내지 못했습니다.", detail: error.message });
@@ -1797,11 +1882,11 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/api/transactions/sample.xlsx") {
     const sampleBuffer = buildTransactionSampleWorkbook();
-    res.writeHead(200, {
+    res.writeHead(200, securityHeaders({
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": "attachment; filename=\"transaction-upload-sample.xlsx\"",
       "Content-Length": sampleBuffer.length
-    });
+    }));
     res.end(sampleBuffer);
     return;
   }
@@ -1828,17 +1913,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   const requestedPath = pathname === "/" ? "/index.html" : pathname;
-  const filePath = path.normalize(path.join(root, requestedPath));
+  const filePath = resolveStaticFilePath(requestedPath);
 
-  if (!filePath.startsWith(root)) {
-    res.writeHead(403);
+  if (!filePath) {
+    res.writeHead(403, securityHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end("Forbidden");
+    return;
+  }
+
+  if (!isPublicStaticPath(requestedPath)) {
+    res.writeHead(404, securityHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
+    res.end("Not found");
     return;
   }
 
   fs.readFile(filePath, (error, content) => {
     if (error) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.writeHead(404, securityHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end("Not found");
       return;
     }
@@ -1848,7 +1939,7 @@ const server = http.createServer(async (req, res) => {
     if (["/index.html", "/service-worker.js", "/src/app.js", "/src/styles.css", "/src/pwa.js"].includes(requestedPath)) {
       headers["Cache-Control"] = "no-cache";
     }
-    res.writeHead(200, headers);
+    res.writeHead(200, securityHeaders(headers));
     res.end(content);
   });
 });

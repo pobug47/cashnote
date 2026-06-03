@@ -21,6 +21,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      NODE_ENV: production
       PORT: 5173
       DATABASE_URL: postgres://${POSTGRES_USER:-cashnote}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cashnote}
       DATABASE_SSL: "false"
