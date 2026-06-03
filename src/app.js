@@ -114,6 +114,9 @@ let currentAccountIsAdmin = false;
 let editingNoticeId = null;
 let adminNotices = [];
 let adminNoticeRefreshPromise = null;
+let supportTickets = [];
+let supportRefreshPromise = null;
+let editingSupportTicketId = null;
 let activeNoticeModalIds = [];
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
@@ -403,14 +406,32 @@ function normalizeSupportTickets(tickets) {
       category: String(ticket?.category || "불편 사항").trim(),
       title: String(ticket?.title || "").trim(),
       body: String(ticket?.body || "").trim(),
-      status: String(ticket?.status || "접수").trim(),
+      status: normalizeSupportStatus(ticket?.status),
       author: String(ticket?.author || "").trim(),
       email: String(ticket?.email || "").trim(),
       attachment: ticket?.attachment || null,
+      adminReply: String(ticket?.adminReply || "").trim(),
+      repliedBy: String(ticket?.repliedBy || "").trim(),
+      repliedAt: ticket?.repliedAt || null,
       createdAt: ticket?.createdAt || new Date().toISOString(),
       updatedAt: ticket?.updatedAt || ticket?.createdAt || new Date().toISOString()
     }))
     .filter((ticket) => ticket.title && ticket.body);
+}
+
+function normalizeSupportStatus(status) {
+  const value = String(status || "").trim();
+  const aliases = {
+    접수: "received",
+    처리: "processing",
+    처리중: "processing",
+    "처리 중": "processing",
+    완료: "done",
+    답변완료: "done",
+    "답변 완료": "done"
+  };
+  const normalized = aliases[value] || value;
+  return ["received", "processing", "done"].includes(normalized) ? normalized : "received";
 }
 
 function currentMonthValue() {
@@ -573,6 +594,8 @@ function applyServerSession(result) {
   currentUserEmail = result.account?.email || result.account?.phone || currentUserEmail;
   currentSessionToken = result.sessionToken || currentSessionToken;
   currentAccountIsAdmin = Boolean(result.account?.isAdmin);
+  supportTickets = [];
+  editingSupportTicketId = null;
   state = result.state || state;
   if (currentUserEmail) {
     state.auth = { email: currentUserEmail };
@@ -1299,6 +1322,8 @@ function initProfileControls() {
     currentAccountIsAdmin = false;
     adminNotices = [];
     editingNoticeId = null;
+    supportTickets = [];
+    editingSupportTicketId = null;
     activeNoticeModalIds = [];
     showLoginScene("로그아웃되었습니다. 다시 로그인해 주세요.");
   });
@@ -1439,6 +1464,9 @@ function initAccountControls() {
       currentUserEmail = null;
       currentLedgerId = null;
       currentSessionToken = "";
+      currentAccountIsAdmin = false;
+      supportTickets = [];
+      editingSupportTicketId = null;
       state = structuredClone(sampleData);
       showLoginScene("계정이 삭제되었습니다.");
     } catch (error) {
@@ -2774,10 +2802,18 @@ function renderBudgets() {
 
 function supportStatusLabel(status) {
   return {
-    접수: "접수",
-    확인중: "확인 중",
-    답변완료: "답변 완료"
+    received: "접수",
+    processing: "처리 중",
+    done: "완료"
   }[status] || status || "접수";
+}
+
+function supportStatusClass(status) {
+  return {
+    received: "received",
+    processing: "processing",
+    done: "done"
+  }[status] || "received";
 }
 
 function supportDateLabel(value) {
@@ -2786,16 +2822,141 @@ function supportDateLabel(value) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function setSupportBoardStatus(message, type = "success") {
+  setFormStatus("#supportBoardStatus", message, type);
+}
+
+function supportTicketSource() {
+  const remoteTickets = normalizeSupportTickets(supportTickets);
+  if (currentAccountIsAdmin || remoteTickets.length) return remoteTickets;
+  return normalizeSupportTickets(state.supportTickets);
+}
+
+function supportTicketById(id) {
+  return supportTicketSource().find((ticket) => ticket.id === id) || null;
+}
+
+function upsertSupportTicket(ticket) {
+  const normalized = normalizeSupportTickets([ticket])[0];
+  if (!normalized) return;
+  supportTickets = normalizeSupportTickets([normalized, ...supportTickets.filter((item) => item.id !== normalized.id)]);
+  if (!currentAccountIsAdmin) {
+    state.supportTickets = normalizeSupportTickets([normalized, ...(state.supportTickets || []).filter((item) => item.id !== normalized.id)]);
+  }
+}
+
+function setSupportFormMode() {
+  const form = document.querySelector("#supportForm");
+  if (!form) return;
+  const isEditing = Boolean(editingSupportTicketId);
+  document.querySelector("#supportFormTitle").textContent = isEditing ? "문의 내용 수정" : "불편 사항 등록";
+  document.querySelector("#supportSubmitButton").textContent = isEditing ? "수정 저장" : "문의 등록";
+  document.querySelector("#supportEditActions").hidden = !isEditing;
+  form.classList.toggle("editing-form", isEditing);
+}
+
+function resetSupportForm() {
+  const form = document.querySelector("#supportForm");
+  if (!form) return;
+  editingSupportTicketId = null;
+  form.reset();
+  form.elements.ticketId.value = "";
+  setSupportFormMode();
+}
+
+function startSupportEdit(id) {
+  const form = document.querySelector("#supportForm");
+  const ticket = supportTicketById(id);
+  if (!form || !ticket || ticket.status === "done") return;
+
+  editingSupportTicketId = ticket.id;
+  form.elements.ticketId.value = ticket.id;
+  form.elements.category.value = ticket.category;
+  form.elements.title.value = ticket.title;
+  form.elements.body.value = ticket.body;
+  form.elements.attachment.value = "";
+  setSupportFormMode();
+  form.hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.title.focus();
+}
+
+async function fetchSupportTickets({ force = false } = {}) {
+  if (supportRefreshPromise && !force) return supportRefreshPromise;
+  if (!currentSessionToken) return [];
+
+  supportRefreshPromise = apiRequest(currentAccountIsAdmin ? "/api/admin/support-tickets" : "/api/support/tickets")
+    .then((result) => {
+      supportTickets = normalizeSupportTickets(result.tickets || []);
+      if (!currentAccountIsAdmin) {
+        state.supportTickets = supportTickets;
+      }
+      renderSupportTickets();
+      return supportTickets;
+    })
+    .catch((error) => {
+      setSupportBoardStatus(error.message, "error");
+      return [];
+    })
+    .finally(() => {
+      supportRefreshPromise = null;
+    });
+
+  return supportRefreshPromise;
+}
+
+async function updateSupportTicketStatus(id, status) {
+  const ticket = supportTicketById(id);
+  if (!ticket) return;
+  try {
+    const result = await apiRequest(`/api/admin/support-tickets/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: { status }
+    });
+    upsertSupportTicket(result.ticket);
+    renderSupportTickets();
+    setSupportBoardStatus("문의 상태를 변경했습니다.", "success");
+  } catch (error) {
+    setSupportBoardStatus(error.message, "error");
+  }
+}
+
+async function saveSupportTicketReply(id) {
+  const ticket = supportTicketById(id);
+  const textarea = document.querySelector(`[data-support-reply="${CSS.escape(id)}"]`);
+  if (!ticket || !textarea) return;
+
+  try {
+    const result = await apiRequest(`/api/admin/support-tickets/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: {
+        status: ticket.status,
+        adminReply: textarea.value
+      }
+    });
+    upsertSupportTicket(result.ticket);
+    renderSupportTickets();
+    setSupportBoardStatus("관리자 답글을 저장했습니다.", "success");
+  } catch (error) {
+    setSupportBoardStatus(error.message, "error");
+  }
+}
+
 function renderSupportTickets() {
   const list = document.querySelector("#supportTicketList");
+  const form = document.querySelector("#supportForm");
   if (!list) return;
 
-  state.supportTickets = normalizeSupportTickets(state.supportTickets);
-  const tickets = [...state.supportTickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (form) form.hidden = currentAccountIsAdmin;
+  const title = document.querySelector("#supportBoardTitle");
+  if (title) title.textContent = currentAccountIsAdmin ? "전체 문의 목록" : "내 문의 목록";
+  const tickets = supportTicketSource().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   document.querySelector("#supportTicketCount").textContent = `${tickets.length}건`;
-  document.querySelector("#supportBoardHint").textContent = tickets.length
-    ? "등록한 문의를 최신순으로 보여줍니다."
-    : "아직 등록한 문의가 없습니다.";
+  document.querySelector("#supportBoardHint").textContent = currentAccountIsAdmin
+    ? "전체 사용자의 문의를 확인하고 처리 상태와 답글을 관리합니다."
+    : tickets.length
+      ? "등록한 문의를 최신순으로 보여줍니다. 완료 전까지 내용을 수정할 수 있습니다."
+      : "아직 등록한 문의가 없습니다.";
 
   list.innerHTML = tickets.length
     ? tickets
@@ -2804,10 +2965,10 @@ function renderSupportTickets() {
             <article class="support-ticket-card">
               <div class="support-ticket-top">
                 <div>
-                  <span>${escapeHtml(ticket.category)} · ${escapeHtml(supportDateLabel(ticket.createdAt))}</span>
+                  <span>${escapeHtml(ticket.category)} · ${escapeHtml(supportDateLabel(ticket.createdAt))}${currentAccountIsAdmin ? ` · ${escapeHtml(ticket.email || "-")}` : ""}</span>
                   <strong>${escapeHtml(ticket.title)}</strong>
                 </div>
-                <em>${escapeHtml(supportStatusLabel(ticket.status))}</em>
+                <em class="${supportStatusClass(ticket.status)}">${escapeHtml(supportStatusLabel(ticket.status))}</em>
               </div>
               <p>${escapeHtml(ticket.body)}</p>
               ${
@@ -2815,11 +2976,38 @@ function renderSupportTickets() {
                   ? `<img class="support-ticket-image" src="${escapeHtml(ticket.attachment.dataUrl)}" alt="${escapeHtml(ticket.attachment.name || "첨부 이미지")}" />`
                   : ""
               }
+              ${
+                ticket.adminReply
+                  ? `<div class="support-reply-box">
+                      <strong>관리자 답변</strong>
+                      <p>${escapeHtml(ticket.adminReply)}</p>
+                      ${ticket.repliedAt ? `<span>${escapeHtml(supportDateLabel(ticket.repliedAt))}</span>` : ""}
+                    </div>`
+                  : ""
+              }
+              ${
+                currentAccountIsAdmin
+                  ? `<label class="support-reply-field">
+                      관리자 답글
+                      <textarea data-support-reply="${escapeHtml(ticket.id)}" maxlength="1200" placeholder="고객에게 보여줄 답변을 입력해 주세요.">${escapeHtml(ticket.adminReply)}</textarea>
+                    </label>
+                    <div class="support-ticket-actions" data-support-ticket-id="${escapeHtml(ticket.id)}">
+                      <button class="mini-button ${ticket.status === "received" ? "active" : ""}" type="button" data-support-status="received">접수</button>
+                      <button class="mini-button ${ticket.status === "processing" ? "active" : ""}" type="button" data-support-status="processing">처리</button>
+                      <button class="mini-button ${ticket.status === "done" ? "active" : ""}" type="button" data-support-status="done">완료</button>
+                      <button class="mini-button support-reply-save-button" type="button" data-save-support-reply="${escapeHtml(ticket.id)}">답글 저장</button>
+                    </div>`
+                  : ticket.status !== "done"
+                    ? `<div class="support-ticket-actions">
+                        <button class="mini-button" type="button" data-edit-support-ticket="${escapeHtml(ticket.id)}">수정</button>
+                      </div>`
+                    : ""
+              }
             </article>
           `
         )
         .join("")
-    : `<div class="history-empty">서비스 이용 중 불편한 점이 생기면 이곳에 남겨 주세요.</div>`;
+    : `<div class="history-empty">${currentAccountIsAdmin ? "등록된 문의가 없습니다." : "서비스 이용 중 불편한 점이 생기면 이곳에 남겨 주세요."}</div>`;
 }
 
 function setBudgetFormMode() {
@@ -3840,6 +4028,7 @@ function setView(view, options = {}) {
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active-view"));
   document.querySelector(`#${view}View`).classList.add("active-view");
   if (view === "admin") fetchAdminNotices();
+  if (view === "support") fetchSupportTickets({ force: true });
   if (options.updateHistory !== false) {
     writeNavigationHistory(view, { replace: options.replaceHistory || previousView === view });
   }
@@ -4249,14 +4438,18 @@ function readSupportAttachment(file) {
 function initSupportControls() {
   const supportForm = document.querySelector("#supportForm");
   if (!supportForm) return;
+  const list = document.querySelector("#supportTicketList");
+  const cancelEditButton = document.querySelector("#cancelSupportEditButton");
 
   supportForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(supportForm);
+    const ticketId = String(form.get("ticketId") || editingSupportTicketId || "").trim();
     const category = String(form.get("category") || "불편 사항").trim();
     const title = String(form.get("title") || "").trim();
     const body = String(form.get("body") || "").trim();
     const attachmentFile = supportForm.elements.attachment.files?.[0] || null;
+    const currentTicket = ticketId ? supportTicketById(ticketId) : null;
 
     if (!title || !body) {
       setFormStatus("#supportStatus", "제목과 내용을 입력해 주세요.", "error");
@@ -4264,28 +4457,55 @@ function initSupportControls() {
     }
 
     try {
-      const attachment = await readSupportAttachment(attachmentFile);
-      state.supportTickets = normalizeSupportTickets([
-        ...(state.supportTickets || []),
-        {
-          id: crypto.randomUUID(),
+      if (currentTicket?.status === "done") {
+        setFormStatus("#supportStatus", "완료된 문의는 수정할 수 없습니다. 추가 확인이 필요하면 새 문의를 등록해 주세요.", "error");
+        return;
+      }
+
+      const newAttachment = await readSupportAttachment(attachmentFile);
+      const attachment = newAttachment || currentTicket?.attachment || null;
+      const result = await apiRequest(ticketId ? `/api/support/tickets/${encodeURIComponent(ticketId)}` : "/api/support/tickets", {
+        method: ticketId ? "PUT" : "POST",
+        body: {
           category,
           title,
           body,
-          status: "접수",
           author: currentAuthorName(),
-          email: currentUserEmail || state.auth?.email || "",
-          attachment,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          attachment
         }
-      ]);
-      supportForm.reset();
-      setFormStatus("#supportStatus", "문의가 등록되었습니다. 고객센터 목록에서 확인할 수 있습니다.", "success");
+      });
+      upsertSupportTicket(result.ticket);
+      resetSupportForm();
+      setFormStatus("#supportStatus", ticketId ? "문의 내용이 수정되었습니다." : "문의가 등록되었습니다. 고객센터 목록에서 확인할 수 있습니다.", "success");
       persist();
       renderSupportTickets();
     } catch (error) {
       setFormStatus("#supportStatus", error.message, "error");
+    }
+  });
+
+  cancelEditButton?.addEventListener("click", () => {
+    resetSupportForm();
+    setFormStatus("#supportStatus", "수정을 취소했습니다.");
+  });
+
+  list?.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-support-ticket]");
+    if (editButton) {
+      startSupportEdit(editButton.dataset.editSupportTicket);
+      return;
+    }
+
+    const statusButton = event.target.closest("[data-support-status]");
+    if (statusButton) {
+      const container = statusButton.closest("[data-support-ticket-id]");
+      if (container) updateSupportTicketStatus(container.dataset.supportTicketId, statusButton.dataset.supportStatus);
+      return;
+    }
+
+    const replyButton = event.target.closest("[data-save-support-reply]");
+    if (replyButton) {
+      saveSupportTicketReply(replyButton.dataset.saveSupportReply);
     }
   });
 }

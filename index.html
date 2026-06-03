@@ -496,8 +496,9 @@
         <section id="supportView" class="view">
           <div class="support-layout">
             <form id="supportForm" class="panel form-panel">
+              <input name="ticketId" type="hidden" />
               <div>
-                <h2>불편 사항 등록</h2>
+                <h2 id="supportFormTitle">불편 사항 등록</h2>
                 <p class="panel-description">서비스 이용 중 불편했던 점이나 개선 요청을 게시판처럼 남길 수 있습니다.</p>
               </div>
               <label>
@@ -524,18 +525,22 @@
                 <input name="attachment" type="file" accept="image/*" />
                 <small class="field-help">선택 사항입니다. 화면 캡처를 첨부하면 확인이 쉬워요.</small>
               </label>
-              <button type="submit" class="primary-button">문의 등록</button>
+              <button id="supportSubmitButton" type="submit" class="primary-button">문의 등록</button>
+              <div id="supportEditActions" class="form-actions" hidden>
+                <button id="cancelSupportEditButton" class="secondary-button" type="button">수정 취소</button>
+              </div>
               <p id="supportStatus" class="form-status" aria-live="polite"></p>
             </form>
 
             <section class="panel support-board-panel">
               <div class="panel-heading">
                 <div>
-                  <h2>내 문의 목록</h2>
+                  <h2 id="supportBoardTitle">내 문의 목록</h2>
                   <span id="supportBoardHint">등록한 문의를 최신순으로 보여줍니다.</span>
                 </div>
                 <span id="supportTicketCount"></span>
               </div>
+              <p id="supportBoardStatus" class="form-status" aria-live="polite"></p>
               <div id="supportTicketList" class="support-ticket-list"></div>
             </section>
           </div>

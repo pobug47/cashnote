@@ -16,6 +16,7 @@ const verificationTtlMs = 1000 * 60 * 10;
 const verificationCooldownMs = 1000 * 60;
 const passwordMinLength = 8;
 const noticeSeverities = ["info", "warning", "maintenance"];
+const supportStatuses = ["received", "processing", "done"];
 const emailDeliveryUnavailableMessage = "이메일 인증 발송이 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.";
 let dbReadyPromise = null;
 const rateLimits = new Map();
@@ -227,12 +228,34 @@ async function getDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        author TEXT,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'received',
+        attachment JSONB,
+        admin_reply TEXT,
+        replied_by TEXT,
+        replied_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT;
+      ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_by TEXT;
+      ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
       CREATE INDEX IF NOT EXISTS idx_accounts_ledger_id ON accounts(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_invites_ledger_id ON invites(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(email);
       CREATE INDEX IF NOT EXISTS idx_sessions_ledger_id ON sessions(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_email_verifications_expires_at ON email_verifications(expires_at);
       CREATE INDEX IF NOT EXISTS idx_notices_active ON notices(active);
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_ledger_id ON support_tickets(ledger_id);
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_created_at ON support_tickets(created_at);
     `).then(() => pool).catch((error) => {
       dbReadyPromise = null;
       throw error;
@@ -314,6 +337,31 @@ function publicNotice(row) {
         startsAt: row.startsAt || null,
         endsAt: row.endsAt || null,
         createdBy: row.createdBy || "",
+        createdAt: row.createdAt || null,
+        updatedAt: row.updatedAt || null
+      }
+    : null;
+}
+
+function normalizeSupportStatus(value) {
+  return supportStatuses.includes(value) ? value : "received";
+}
+
+function publicSupportTicket(row) {
+  return row
+    ? {
+        id: row.id,
+        ledgerId: row.ledgerId || "",
+        email: row.email || "",
+        author: row.author || "",
+        category: row.category || "불편 사항",
+        title: row.title,
+        body: row.body,
+        status: normalizeSupportStatus(row.status),
+        attachment: row.attachment || null,
+        adminReply: row.adminReply || "",
+        repliedBy: row.repliedBy || "",
+        repliedAt: row.repliedAt || null,
         createdAt: row.createdAt || null,
         updatedAt: row.updatedAt || null
       }
@@ -1009,6 +1057,251 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true });
     } catch (error) {
       sendJson(res, 500, { error: "가계부 데이터를 저장하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/support/tickets" && req.method === "GET") {
+    try {
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!session) {
+        sendJson(res, 401, { error: "로그인이 필요합니다." });
+        return;
+      }
+
+      const result = await db.query(
+        `
+          SELECT
+            id,
+            ledger_id AS "ledgerId",
+            email,
+            author,
+            category,
+            title,
+            body,
+            status,
+            attachment,
+            admin_reply AS "adminReply",
+            replied_by AS "repliedBy",
+            replied_at AS "repliedAt",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+          FROM support_tickets
+          WHERE ledger_id = $1 AND email = $2
+          ORDER BY created_at DESC
+        `,
+        [session.ledgerId, session.email]
+      );
+      sendJson(res, 200, { tickets: result.rows.map(publicSupportTicket) });
+    } catch (error) {
+      sendJson(res, 500, { error: "문의 목록을 불러오지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/support/tickets" && req.method === "POST") {
+    try {
+      const body = await readJsonBody(req);
+      const category = String(body.category || "불편 사항").trim();
+      const title = String(body.title || "").trim();
+      const ticketBody = String(body.body || "").trim();
+      const author = String(body.author || "").trim();
+      const attachment = body.attachment && typeof body.attachment === "object" ? body.attachment : null;
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!session) {
+        sendJson(res, 401, { error: "로그인이 필요합니다." });
+        return;
+      }
+      if (!title || !ticketBody) {
+        sendJson(res, 400, { error: "문의 제목과 내용을 입력해 주세요." });
+        return;
+      }
+
+      const id = createId("support");
+      const result = await db.query(
+        `
+          INSERT INTO support_tickets (id, ledger_id, email, author, category, title, body, status, attachment, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 'received', $8::jsonb, NOW(), NOW())
+          RETURNING
+            id,
+            ledger_id AS "ledgerId",
+            email,
+            author,
+            category,
+            title,
+            body,
+            status,
+            attachment,
+            admin_reply AS "adminReply",
+            replied_by AS "repliedBy",
+            replied_at AS "repliedAt",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [id, session.ledgerId, session.email, author, category, title, ticketBody, JSON.stringify(attachment)]
+      );
+      sendJson(res, 201, { ticket: publicSupportTicket(result.rows[0]) });
+    } catch (error) {
+      sendJson(res, 500, { error: "문의를 등록하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/support/tickets/") && req.method === "PUT") {
+    try {
+      const id = pathname.split("/").pop();
+      const body = await readJsonBody(req);
+      const category = String(body.category || "불편 사항").trim();
+      const title = String(body.title || "").trim();
+      const ticketBody = String(body.body || "").trim();
+      const attachment = body.attachment && typeof body.attachment === "object" ? body.attachment : null;
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!session) {
+        sendJson(res, 401, { error: "로그인이 필요합니다." });
+        return;
+      }
+      if (!title || !ticketBody) {
+        sendJson(res, 400, { error: "문의 제목과 내용을 입력해 주세요." });
+        return;
+      }
+
+      const existing = await db.query(
+        `
+          SELECT status
+          FROM support_tickets
+          WHERE id = $1 AND ledger_id = $2 AND email = $3
+        `,
+        [id, session.ledgerId, session.email]
+      );
+      if (!existing.rows[0]) {
+        sendJson(res, 404, { error: "문의를 찾을 수 없습니다." });
+        return;
+      }
+      if (normalizeSupportStatus(existing.rows[0].status) === "done") {
+        sendJson(res, 403, { error: "완료된 문의는 수정할 수 없습니다. 추가 확인이 필요하면 새 문의를 등록해 주세요." });
+        return;
+      }
+
+      const result = await db.query(
+        `
+          UPDATE support_tickets
+          SET category = $2,
+              title = $3,
+              body = $4,
+              attachment = $5::jsonb,
+              updated_at = NOW()
+          WHERE id = $1 AND ledger_id = $6 AND email = $7
+          RETURNING
+            id,
+            ledger_id AS "ledgerId",
+            email,
+            author,
+            category,
+            title,
+            body,
+            status,
+            attachment,
+            admin_reply AS "adminReply",
+            replied_by AS "repliedBy",
+            replied_at AS "repliedAt",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [id, category, title, ticketBody, JSON.stringify(attachment), session.ledgerId, session.email]
+      );
+      sendJson(res, 200, { ticket: publicSupportTicket(result.rows[0]) });
+    } catch (error) {
+      sendJson(res, 500, { error: "문의를 수정하지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/admin/support-tickets" && req.method === "GET") {
+    try {
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      const result = await db.query(`
+        SELECT
+          id,
+          ledger_id AS "ledgerId",
+          email,
+          author,
+          category,
+          title,
+          body,
+          status,
+          attachment,
+          admin_reply AS "adminReply",
+          replied_by AS "repliedBy",
+          replied_at AS "repliedAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM support_tickets
+        ORDER BY
+          CASE status
+            WHEN 'received' THEN 1
+            WHEN 'processing' THEN 2
+            WHEN 'done' THEN 3
+            ELSE 4
+          END,
+          created_at DESC
+      `);
+      sendJson(res, 200, { tickets: result.rows.map(publicSupportTicket) });
+    } catch (error) {
+      sendJson(res, 500, { error: "관리자 문의 목록을 불러오지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/admin/support-tickets/") && req.method === "PUT") {
+    try {
+      const id = pathname.split("/").pop();
+      const body = await readJsonBody(req);
+      const status = normalizeSupportStatus(body.status);
+      const adminReply = typeof body.adminReply === "string" ? body.adminReply.trim() : null;
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      const result = await db.query(
+        `
+          UPDATE support_tickets
+          SET status = $2,
+              admin_reply = COALESCE($3, admin_reply),
+              replied_by = CASE WHEN $3 IS NULL THEN replied_by ELSE $4 END,
+              replied_at = CASE WHEN $3 IS NULL THEN replied_at ELSE NOW() END,
+              updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            ledger_id AS "ledgerId",
+            email,
+            author,
+            category,
+            title,
+            body,
+            status,
+            attachment,
+            admin_reply AS "adminReply",
+            replied_by AS "repliedBy",
+            replied_at AS "repliedAt",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `,
+        [id, status, adminReply, session.email]
+      );
+      if (!result.rows[0]) {
+        sendJson(res, 404, { error: "문의를 찾을 수 없습니다." });
+        return;
+      }
+      sendJson(res, 200, { ticket: publicSupportTicket(result.rows[0]) });
+    } catch (error) {
+      sendJson(res, 500, { error: "문의 상태를 변경하지 못했습니다.", detail: error.message });
     }
     return;
   }

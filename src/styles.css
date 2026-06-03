@@ -709,6 +709,16 @@ h2 {
   font-weight: 900;
 }
 
+.support-ticket-top em.processing {
+  color: #8a4d00;
+  background: #fff0cf;
+}
+
+.support-ticket-top em.done {
+  color: #26436c;
+  background: #e8effb;
+}
+
 .support-ticket-card p {
   margin: 0;
   white-space: pre-wrap;
@@ -720,6 +730,59 @@ h2 {
   object-fit: cover;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.support-reply-box {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(var(--theme-rgb), 0.28);
+  border-radius: 8px;
+  background: var(--theme-soft);
+}
+
+.support-reply-box strong {
+  font-size: 13px;
+}
+
+.support-reply-box p {
+  color: var(--ink);
+}
+
+.support-reply-box span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-reply-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.support-reply-field textarea {
+  min-height: 90px;
+}
+
+.support-ticket-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.support-ticket-actions .mini-button.active {
+  color: #fff;
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.support-reply-save-button {
+  color: var(--theme-dark);
+  border-color: rgba(var(--theme-rgb), 0.42);
+  background: var(--theme-soft);
 }
 
 .active-goals-panel {
