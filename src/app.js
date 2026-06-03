@@ -513,13 +513,31 @@ async function apiRequest(path, options = {}) {
 
 function loadAdsenseScript(client) {
   const src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
-  if (!client || document.querySelector(`script[src="${src}"]`)) return;
+  if (!client) {
+    return Promise.reject(new Error("AdSense client is missing."));
+  }
 
-  const script = document.createElement("script");
-  script.async = true;
-  script.crossOrigin = "anonymous";
-  script.src = src;
-  document.head.appendChild(script);
+  const existingScript = document.querySelector(`script[src="${src}"]`);
+  if (existingScript) {
+    if (existingScript.dataset.loaded === "true") return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      existingScript.addEventListener("load", resolve, { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.src = src;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", reject, { once: true });
+    document.head.appendChild(script);
+  });
 }
 
 function renderAdFallback(message = "광고 네트워크 승인 후 이 영역을 실제 배너로 교체할 수 있습니다.") {
@@ -547,7 +565,6 @@ function renderBottomAdSlot(ads = {}) {
     return;
   }
 
-  loadAdsenseScript(client);
   container.className = "ad-banner-inner ad-live-slot";
   container.innerHTML = `
     <ins class="adsbygoogle"
@@ -558,22 +575,17 @@ function renderBottomAdSlot(ads = {}) {
       data-full-width-responsive="true"></ins>
   `;
 
-  window.requestAnimationFrame(() => {
+  loadAdsenseScript(client).then(() => {
     try {
       window.adsbygoogle = window.adsbygoogle || [];
       window.adsbygoogle.push({});
-      window.setTimeout(() => {
-        const ad = container.querySelector(".adsbygoogle");
-        const hasFrame = Boolean(container.querySelector("iframe"));
-        const status = ad?.getAttribute("data-ad-status") || "";
-        if (!hasFrame && status !== "filled") {
-          renderAdFallback("광고 요청은 보냈지만 아직 송출되지 않았습니다. AdSense 사이트 승인, 광고 단위 상태, 광고 재고를 확인해 주세요.");
-        }
-      }, 4500);
     } catch (error) {
       console.warn("AdSense slot could not be initialized", error);
       renderAdFallback("AdSense 광고를 초기화하지 못했습니다. 설정값과 승인 상태를 확인해 주세요.");
     }
+  }).catch((error) => {
+    console.warn("AdSense script could not be loaded", error);
+    renderAdFallback("AdSense 스크립트를 불러오지 못했습니다. 광고 차단기와 네트워크 상태를 확인해 주세요.");
   });
 }
 
