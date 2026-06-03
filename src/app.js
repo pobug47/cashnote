@@ -1109,7 +1109,7 @@ function loginFailureMessage(error) {
     return error.message || "이미 다른 가계부와 연결된 계정입니다. 로그인 정보나 초대 코드를 확인해 주세요.";
   }
   if (error.status === 500 || error.status === 503) {
-    return `서버 연결 또는 DB 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요. ${error.message || ""}`.trim();
+    return `저장된 정보를 처리하는 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요. ${error.message || ""}`.trim();
   }
   return error.message || "로그인에 실패했습니다. 입력한 이메일과 비밀번호를 다시 확인해 주세요.";
 }
@@ -1282,7 +1282,7 @@ async function resumeSession() {
     currentLedgerId = null;
     currentSessionToken = "";
     currentAccountIsAdmin = false;
-    showLoginScene(`서버 DB에서 로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`, "error");
+    showLoginScene(`로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`, "error");
   }
 }
 
