@@ -30,12 +30,12 @@ const sampleSecurities = [
 ];
 
 const defaultBudgets = [
-  { category: "식비", amount: 400000 },
-  { category: "생활", amount: 200000 },
-  { category: "교통", amount: 100000 },
-  { category: "고정지출비", amount: 600000 },
-  { category: "의료", amount: 100000 },
-  { category: "문화", amount: 150000 }
+  { category: "식비", amount: 400000, scope: "personal", author: "" },
+  { category: "생활", amount: 200000, scope: "personal", author: "" },
+  { category: "교통", amount: 100000, scope: "personal", author: "" },
+  { category: "고정지출비", amount: 600000, scope: "shared", author: "" },
+  { category: "의료", amount: 100000, scope: "personal", author: "" },
+  { category: "문화", amount: 150000, scope: "personal", author: "" }
 ];
 
 const sampleData = {
@@ -375,13 +375,17 @@ function normalizeBudgets(budgets) {
   source.forEach((item) => {
     const category = String(item?.category || "").trim();
     const amount = Math.max(0, Number(item?.amount) || 0);
-    const key = category.toLowerCase();
+    const scope = item?.scope === "shared" ? "shared" : "personal";
+    const author = scope === "personal" ? String(item?.author || "").trim() : "";
+    const key = `${scope}:${author}:${category.toLowerCase()}`;
     if (!category || seen.has(key)) return;
     seen.add(key);
     normalized.push({
       id: item?.id || crypto.randomUUID(),
       category,
-      amount
+      amount,
+      scope,
+      author
     });
   });
 
@@ -766,7 +770,9 @@ function renderMemberSettings() {
 
 function renderAdminAccess() {
   const adminNav = document.querySelector("#adminNavItem");
+  const resetButton = document.querySelector("#resetData");
   if (adminNav) adminNav.hidden = !currentAccountIsAdmin;
+  if (resetButton) resetButton.hidden = !currentAccountIsAdmin;
   if (!currentAccountIsAdmin && currentView() === "admin") {
     setView("dashboard", { replaceHistory: true });
   }
@@ -1438,6 +1444,7 @@ function initAccountControls() {
     renderMemberSettings();
     renderDashboard();
     renderTransactions();
+    renderBudgets();
   });
 
   memberList.addEventListener("click", (event) => {
@@ -1483,6 +1490,7 @@ function initAccountControls() {
     renderMemberSettings();
     renderDashboard();
     renderTransactions();
+    renderBudgets();
   });
 
   inviteForm.addEventListener("submit", async (event) => {
@@ -2028,6 +2036,47 @@ function syncAuthorMenu(selectedAuthor = null) {
   authorSelect.required = hasMultipleAuthors;
   authorSelect.innerHTML = members.map((member) => `<option value="${escapeHtml(member)}">${escapeHtml(member)}</option>`).join("");
   authorSelect.value = nextAuthor;
+  syncTransactionBudgetMenu();
+}
+
+function budgetOwnerName(budget) {
+  return budget.scope === "shared" ? "공동" : budget.author || currentAuthorName();
+}
+
+function budgetScopeLabel(budget) {
+  if (!hasSharedLedger()) return "월 예산";
+  return budget.scope === "shared" ? "공동 예산" : `${budgetOwnerName(budget)} 개인 예산`;
+}
+
+function applicableBudgetsForTransaction(type, author = currentAuthorName()) {
+  if (type !== "expense") return [];
+  state.budgets = normalizeBudgets(state.budgets);
+  if (!hasSharedLedger()) return state.budgets;
+  const normalizedAuthor = String(author || currentAuthorName()).trim();
+  return state.budgets.filter((budget) => budget.scope === "shared" || budgetOwnerName(budget) === normalizedAuthor);
+}
+
+function budgetForTransaction(item = {}) {
+  return state.budgets?.find((budget) => budget.id === item.budgetId) || null;
+}
+
+function syncTransactionBudgetMenu(selectedBudgetId = null) {
+  const transactionForm = document.querySelector("#transactionForm");
+  const field = document.querySelector("#transactionBudgetField");
+  if (!transactionForm || !field || !transactionForm.elements.budgetId) return;
+
+  const type = transactionForm.elements.type.value;
+  const author = transactionForm.elements.author?.value || currentAuthorName();
+  const budgets = applicableBudgetsForTransaction(type, author);
+  field.hidden = type !== "expense";
+  transactionForm.elements.budgetId.innerHTML = `
+    <option value="">예산 선택 안 함</option>
+    ${budgets
+      .map((budget) => `<option value="${escapeHtml(budget.id)}">${escapeHtml(budget.category)} · ${escapeHtml(budgetScopeLabel(budget))}</option>`)
+      .join("")}
+  `;
+  const nextValue = selectedBudgetId && budgets.some((budget) => budget.id === selectedBudgetId) ? selectedBudgetId : "";
+  transactionForm.elements.budgetId.value = nextValue;
 }
 
 function paymentLabel(item) {
@@ -2201,6 +2250,8 @@ function importTransactionsFromWorkbook(workbook) {
 function transactionMeta(item, includeMemo = true) {
   const details = [item.date, typeLabel(item.type), paymentLabel(item)];
   if (uniqueNames(state.householdMembers).length > 1) details.splice(2, 0, authorName(item));
+  const budget = budgetForTransaction(item);
+  if (budget) details.push(`예산: ${budget.category}`);
   if (includeMemo) details.push(item.memo || "메모 없음");
   return details.filter(Boolean).join(" · ");
 }
@@ -2338,6 +2389,7 @@ function prefillTransactionForm({ type, category, amount, memo }) {
   transactionForm.elements.amount.value = Math.max(0, Math.round(amount || 0));
   syncAuthorMenu();
   syncPaymentMethodMenu();
+  syncTransactionBudgetMenu();
   transactionForm.elements.memo.value = memo || "";
   setTransactionFormMode();
 }
@@ -2633,12 +2685,20 @@ function syncBudgetCategoryOptions() {
   list.innerHTML = expenseCategoriesForBudget().map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
 }
 
-function budgetUsage(category) {
-  return sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => item.type === "expense" && item.category === category);
+function transactionMatchesBudget(item, budget) {
+  if (item.type !== "expense") return false;
+  if (item.budgetId) return item.budgetId === budget.id;
+  if (item.category !== budget.category) return false;
+  if (budget.scope === "shared") return true;
+  return authorName(item) === budgetOwnerName(budget);
+}
+
+function budgetUsage(budget) {
+  return sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => transactionMatchesBudget(item, budget));
 }
 
 function renderBudgetItem(budget) {
-  const used = budgetUsage(budget.category);
+  const used = budgetUsage(budget);
   const remaining = Math.max(0, budget.amount - used);
   const percent = budget.amount ? Math.min(100, (used / budget.amount) * 100) : 0;
   const exceeded = budget.amount > 0 && used > budget.amount;
@@ -2649,7 +2709,7 @@ function renderBudgetItem(budget) {
       <div class="budget-card-main">
         <div>
           <strong>${escapeHtml(budget.category)}</strong>
-          <span>${scopeLabel()} · ${monthLabelFormatter.format(monthDate(state.selectedMonth))}</span>
+          <span>${escapeHtml(budgetScopeLabel(budget))} · ${monthLabelFormatter.format(monthDate(state.selectedMonth))}</span>
         </div>
         <em>${escapeHtml(status)}</em>
       </div>
@@ -2674,9 +2734,9 @@ function renderBudgets() {
 
   state.budgets = normalizeBudgets(state.budgets);
   syncBudgetCategoryOptions();
-  const budgets = [...state.budgets].sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  const budgets = [...state.budgets].sort((a, b) => `${a.scope}:${budgetOwnerName(a)}:${a.category}`.localeCompare(`${b.scope}:${budgetOwnerName(b)}:${b.category}`, "ko"));
   const totalBudget = sum(budgets, () => true);
-  const totalUsed = sum(byMonth(scopedTransactions(), state.selectedMonth), (item) => item.type === "expense");
+  const totalUsed = budgets.reduce((total, budget) => total + budgetUsage(budget), 0);
   const remaining = Math.max(0, totalBudget - totalUsed);
 
   document.querySelector("#budgetOverviewCount").textContent = `${budgets.length}개`;
@@ -2698,6 +2758,27 @@ function setBudgetFormMode() {
   document.querySelector("#budgetSubmitButton").textContent = isEditing ? "수정 저장" : "예산 추가";
   document.querySelector("#budgetEditActions").hidden = !isEditing;
   form.classList.toggle("editing-form", isEditing);
+  syncBudgetScopeControls();
+}
+
+function syncBudgetScopeControls(selectedAuthor = null) {
+  const form = document.querySelector("#budgetForm");
+  if (!form) return;
+
+  const hasMultipleAuthors = uniqueNames(state.householdMembers).length > 1;
+  const scopeField = document.querySelector("#budgetScopeField");
+  const authorField = document.querySelector("#budgetAuthorField");
+  const scopeSelect = form.elements.scope;
+  const authorSelect = form.elements.author;
+  const scope = hasMultipleAuthors ? scopeSelect.value || "personal" : "personal";
+  const members = uniqueNames(state.householdMembers);
+  const previousAuthor = selectedAuthor || authorSelect.value || currentAuthorName();
+
+  if (scopeField) scopeField.hidden = !hasMultipleAuthors;
+  if (authorField) authorField.hidden = !hasMultipleAuthors || scope !== "personal";
+  scopeSelect.value = scope;
+  authorSelect.innerHTML = members.map((member) => `<option value="${escapeHtml(member)}">${escapeHtml(member)}</option>`).join("");
+  authorSelect.value = members.includes(previousAuthor) ? previousAuthor : currentAuthorName();
 }
 
 function resetBudgetForm() {
@@ -2706,6 +2787,8 @@ function resetBudgetForm() {
   editingBudgetId = null;
   form.reset();
   form.elements.budgetId.value = "";
+  if (form.elements.scope) form.elements.scope.value = "personal";
+  syncBudgetScopeControls(currentAuthorName());
   setFormStatus("#budgetStatus");
   setBudgetFormMode();
 }
@@ -2716,6 +2799,8 @@ function startBudgetEdit(id) {
   if (!budget || !form) return;
   editingBudgetId = id;
   form.elements.budgetId.value = id;
+  form.elements.scope.value = budget.scope || "personal";
+  syncBudgetScopeControls(budget.author || currentAuthorName());
   form.elements.category.value = budget.category;
   form.elements.amount.value = budget.amount;
   setFormStatus("#budgetStatus");
@@ -2730,6 +2815,7 @@ function deleteBudget(id) {
   if (editingBudgetId === id) resetBudgetForm();
   persist();
   renderBudgets();
+  syncTransactionBudgetMenu();
   setFormStatus("#budgetStatus", `${budget.category} 예산 항목을 삭제했습니다.`, "success");
 }
 
@@ -3729,16 +3815,19 @@ function transactionPayloadFromForm(form, id) {
   const paymentAccount = resolvePaymentAccount(form);
   const members = uniqueNames(state.householdMembers);
   const author = members.length > 1 ? String(form.get("author") || currentAuthorName() || members[0] || "").trim() : "";
+  const type = form.get("type");
+  const budgetId = type === "expense" ? String(form.get("budgetId") || "").trim() : "";
 
   return {
     id,
     date: form.get("date"),
-    type: form.get("type"),
+    type,
     category,
     amount: Number(form.get("amount")),
     paymentMethod: form.get("paymentMethod"),
     paymentAccount,
     author,
+    budgetId,
     memo: form.get("memo").trim()
   };
 }
@@ -3775,6 +3864,7 @@ function resetTransactionForm() {
   syncAuthorMenu();
   syncCategoryMenu();
   syncPaymentMethodMenu();
+  syncTransactionBudgetMenu();
   setTransactionFormMode();
 }
 
@@ -3800,6 +3890,7 @@ function startTransactionEdit(transactionId) {
     transactionForm.elements.paymentMethod.value = transaction.paymentMethod;
     syncPaymentAccountMenu(transaction.paymentAccount || null);
   }
+  syncTransactionBudgetMenu(transaction.budgetId || null);
   transactionForm.elements.memo.value = transaction.memo || "";
   setTransactionFormMode();
   persist();
@@ -3869,11 +3960,17 @@ function initForms() {
   syncAuthorMenu();
   syncCategoryMenu();
   syncPaymentMethodMenu();
+  syncTransactionBudgetMenu();
   transactionForm.elements.type.addEventListener("change", () => {
     syncCategoryMenu();
     syncPaymentMethodMenu();
+    syncTransactionBudgetMenu();
   });
-  transactionForm.elements.category.addEventListener("change", syncCustomCategoryInput);
+  transactionForm.elements.author?.addEventListener("change", () => syncTransactionBudgetMenu());
+  transactionForm.elements.category.addEventListener("change", () => {
+    syncCustomCategoryInput();
+    syncTransactionBudgetMenu();
+  });
   transactionForm.elements.paymentMethod.addEventListener("change", () => syncPaymentAccountMenu());
   transactionForm.elements.paymentAccount.addEventListener("change", syncCustomPaymentAccountInput);
   transactionForm.elements.customCategory.addEventListener("input", () => {
@@ -3983,6 +4080,8 @@ function initBudgetControls() {
     const id = String(form.get("budgetId") || editingBudgetId || "");
     const category = String(form.get("category") || "").trim();
     const amount = Math.max(0, Number(form.get("amount")) || 0);
+    const scope = hasSharedLedger() && form.get("scope") === "shared" ? "shared" : "personal";
+    const author = scope === "personal" ? String(form.get("author") || currentAuthorName()).trim() : "";
 
     if (!category) {
       setFormStatus("#budgetStatus", "예산 항목 이름을 입력해 주세요.", "error");
@@ -3997,7 +4096,13 @@ function initBudgetControls() {
     }
 
     state.budgets = normalizeBudgets(state.budgets);
-    const duplicate = state.budgets.find((item) => item.category === category && item.id !== id);
+    const duplicate = state.budgets.find(
+      (item) =>
+        item.category === category &&
+        item.scope === scope &&
+        budgetOwnerName(item) === (scope === "shared" ? "공동" : author) &&
+        item.id !== id
+    );
     if (duplicate) {
       setFormStatus("#budgetStatus", "이미 있는 예산 항목입니다. 기존 항목의 수정 버튼을 눌러 주세요.", "error");
       return;
@@ -4006,7 +4111,9 @@ function initBudgetControls() {
     const budget = {
       id: id || crypto.randomUUID(),
       category,
-      amount
+      amount,
+      scope,
+      author
     };
     const index = state.budgets.findIndex((item) => item.id === budget.id);
     if (index >= 0) {
@@ -4017,10 +4124,12 @@ function initBudgetControls() {
 
     persist();
     renderBudgets();
+    syncTransactionBudgetMenu();
     resetBudgetForm();
     setFormStatus("#budgetStatus", index >= 0 ? `${category} 예산을 수정했습니다.` : `${category} 예산을 추가했습니다.`, "success");
   });
 
+  budgetForm.elements.scope?.addEventListener("change", () => syncBudgetScopeControls());
   document.querySelector("#cancelBudgetEdit")?.addEventListener("click", resetBudgetForm);
   document.querySelector("#deleteEditingBudget")?.addEventListener("click", () => {
     if (editingBudgetId) deleteBudget(editingBudgetId);
@@ -4236,6 +4345,13 @@ document.addEventListener("keydown", (event) => {
 document.querySelector("#prevMonth").addEventListener("click", () => shiftMonth(-1));
 document.querySelector("#nextMonth").addEventListener("click", () => shiftMonth(1));
 document.querySelector("#resetData").addEventListener("click", () => {
+  if (!currentAccountIsAdmin) {
+    showInfoModal({
+      title: "관리자 기능입니다",
+      message: "샘플 초기화는 관리자만 사용할 수 있습니다."
+    });
+    return;
+  }
   const profile = state.profile;
   const auth = state.auth;
   const themeColor = state.themeColor;

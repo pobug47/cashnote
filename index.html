@@ -81,7 +81,7 @@
         <div class="storage-panel">
           <span>저장 방식</span>
           <strong>서버 DB 저장</strong>
-          <button id="resetData" class="ghost-button">샘플로 초기화</button>
+          <button id="resetData" class="ghost-button" hidden>샘플로 초기화</button>
           <button id="logoutButton" class="ghost-button" type="button">로그아웃</button>
         </div>
       </aside>
@@ -197,6 +197,10 @@
                 <select id="categorySelect" name="category" required></select>
                 <input id="customCategoryInput" name="customCategory" type="text" placeholder="새 카테고리 입력" hidden />
               </label>
+              <label id="transactionBudgetField" hidden>
+                예산 항목
+                <select id="transactionBudgetSelect" name="budgetId"></select>
+              </label>
               <label>
                 금액
                 <input name="amount" type="number" min="1" step="1" placeholder="50000" required />
@@ -308,6 +312,17 @@
                 <p class="panel-description">기본 예산 항목을 사용하거나 필요한 항목을 직접 추가할 수 있습니다.</p>
               </div>
               <input name="budgetId" type="hidden" />
+              <label id="budgetScopeField" hidden>
+                예산 구분
+                <select name="scope">
+                  <option value="personal">개인 예산</option>
+                  <option value="shared">공동 예산</option>
+                </select>
+              </label>
+              <label id="budgetAuthorField" hidden>
+                개인 예산 대상
+                <select name="author"></select>
+              </label>
               <label>
                 예산 항목
                 <input name="category" list="budgetCategoryOptions" type="text" placeholder="예: 식비, 생활, 교통" required />
