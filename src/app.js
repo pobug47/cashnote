@@ -512,13 +512,13 @@ async function apiRequest(path, options = {}) {
 }
 
 function loadAdsenseScript(client) {
-  if (!client || document.querySelector(`script[data-adsense-client="${client}"]`)) return;
+  const src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+  if (!client || document.querySelector(`script[src="${src}"]`)) return;
 
   const script = document.createElement("script");
   script.async = true;
   script.crossOrigin = "anonymous";
-  script.dataset.adsenseClient = client;
-  script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+  script.src = src;
   document.head.appendChild(script);
 }
 
@@ -551,11 +551,11 @@ function renderBottomAdSlot(ads = {}) {
   container.className = "ad-banner-inner ad-live-slot";
   container.innerHTML = `
     <ins class="adsbygoogle"
-      style="display:block;width:100%;height:60px;max-height:60px"
+      style="display:block"
       data-ad-client="${escapeHtml(client)}"
       data-ad-slot="${escapeHtml(slot)}"
-      data-ad-format="horizontal"
-      data-full-width-responsive="false"></ins>
+      data-ad-format="auto"
+      data-full-width-responsive="true"></ins>
   `;
 
   window.requestAnimationFrame(() => {
@@ -2070,6 +2070,11 @@ function authorName(item = {}) {
   return String(item.author || "").trim() || currentAuthorName();
 }
 
+function canManageTransaction(item = {}) {
+  if (!hasSharedLedger()) return true;
+  return authorName(item) === currentAuthorName();
+}
+
 function syncAuthorMenu(selectedAuthor = null) {
   const transactionForm = document.querySelector("#transactionForm");
   if (!transactionForm) return;
@@ -2077,15 +2082,13 @@ function syncAuthorMenu(selectedAuthor = null) {
   ensureAuthorMembers();
   const authorField = document.querySelector("#authorField");
   const authorSelect = transactionForm.elements.author;
-  const previousAuthor = selectedAuthor || authorSelect.value || currentAuthorName();
   const members = uniqueNames(state.householdMembers);
-  const nextAuthor = members.includes(previousAuthor) ? previousAuthor : members[0] || currentAuthorName();
+  const sessionAuthor = members.includes(currentAuthorName()) ? currentAuthorName() : members[0] || currentAuthorName();
 
-  const hasMultipleAuthors = members.length > 1;
-  if (authorField) authorField.hidden = !hasMultipleAuthors;
-  authorSelect.required = hasMultipleAuthors;
-  authorSelect.innerHTML = members.map((member) => `<option value="${escapeHtml(member)}">${escapeHtml(member)}</option>`).join("");
-  authorSelect.value = nextAuthor;
+  if (authorField) authorField.hidden = true;
+  authorSelect.required = false;
+  authorSelect.innerHTML = `<option value="${escapeHtml(sessionAuthor)}">${escapeHtml(sessionAuthor)}</option>`;
+  authorSelect.value = sessionAuthor;
   syncTransactionBudgetMenu();
 }
 
@@ -2095,19 +2098,30 @@ function budgetOwnerName(budget) {
 
 function budgetScopeLabel(budget) {
   if (!hasSharedLedger()) return "월 예산";
-  return budget.scope === "shared" ? "공동 예산" : `${budgetOwnerName(budget)} 개인 예산`;
+  if (budget.scope === "shared") return "공동 예산";
+  const owner = String(budget.author || "").trim();
+  return owner ? `${owner} 개인 예산` : "개인 예산";
 }
 
 function applicableBudgetsForTransaction(type, author = currentAuthorName()) {
   if (type !== "expense") return [];
   state.budgets = normalizeBudgets(state.budgets);
-  if (!hasSharedLedger()) return state.budgets;
+  if (!hasSharedLedger()) return state.budgets.filter((budget) => budget.scope !== "shared");
+
+  if (ledgerScope() === "shared") {
+    return state.budgets.filter((budget) => budget.scope === "shared");
+  }
+
   const normalizedAuthor = String(author || currentAuthorName()).trim();
-  return state.budgets.filter((budget) => budget.scope === "shared" || budgetOwnerName(budget) === normalizedAuthor);
+  return state.budgets.filter((budget) => budget.scope !== "shared" && (!budget.author || budget.author === normalizedAuthor));
 }
 
 function budgetForTransaction(item = {}) {
   return state.budgets?.find((budget) => budget.id === item.budgetId) || null;
+}
+
+function transactionBudgetOptionLabel(budget) {
+  return budget.category;
 }
 
 function syncTransactionBudgetMenu(selectedBudgetId = null) {
@@ -2121,9 +2135,13 @@ function syncTransactionBudgetMenu(selectedBudgetId = null) {
   field.hidden = type !== "expense";
   transactionForm.elements.budgetId.innerHTML = `
     <option value="">예산 선택 안 함</option>
-    ${budgets
-      .map((budget) => `<option value="${escapeHtml(budget.id)}">${escapeHtml(budget.category)} · ${escapeHtml(budgetScopeLabel(budget))}</option>`)
-      .join("")}
+    ${
+      budgets.length
+        ? budgets
+            .map((budget) => `<option value="${escapeHtml(budget.id)}">${escapeHtml(transactionBudgetOptionLabel(budget))}</option>`)
+            .join("")
+        : `<option value="" disabled>예산 설정에서 예산 항목을 추가해 주세요</option>`
+    }
   `;
   const nextValue = selectedBudgetId && budgets.some((budget) => budget.id === selectedBudgetId) ? selectedBudgetId : "";
   transactionForm.elements.budgetId.value = nextValue;
@@ -3215,6 +3233,15 @@ function renderCalendarDayDetails(date, transactions) {
 }
 
 function renderCalendarDetailItem(item) {
+  const actions = canManageTransaction(item)
+    ? `
+      <div class="history-actions">
+        <button class="mini-button" type="button" data-edit-transaction-id="${item.id}">수정</button>
+        <button class="mini-button danger" type="button" data-delete-transaction-id="${item.id}">삭제</button>
+      </div>
+    `
+    : "";
+
   return `
     <article class="history-item ${item.id === state.selectedTransactionId ? "selected-row" : ""}">
       <div class="transaction-summary">
@@ -3222,10 +3249,7 @@ function renderCalendarDetailItem(item) {
         <small>${escapeHtml(transactionMeta(item, false))}</small>
       </div>
       <strong class="${amountClass(item.type)}">${formatKrw(item.amount)}</strong>
-      <div class="history-actions">
-        <button class="mini-button" type="button" data-edit-transaction-id="${item.id}">수정</button>
-        <button class="mini-button danger" type="button" data-delete-transaction-id="${item.id}">삭제</button>
-      </div>
+      ${actions}
     </article>
   `;
 }
@@ -3295,6 +3319,15 @@ function renderRegisteredHistory(monthTransactions) {
 }
 
 function renderHistoryItem(item) {
+  const actions = canManageTransaction(item)
+    ? `
+      <div class="history-actions">
+        <button class="mini-button" type="button" data-edit-transaction-id="${item.id}">수정</button>
+        <button class="mini-button danger" type="button" data-delete-transaction-id="${item.id}">삭제</button>
+      </div>
+    `
+    : "";
+
   return `
     <article class="history-item ${item.id === state.selectedTransactionId ? "selected-row" : ""}" id="transaction-${item.id}">
       <div class="transaction-summary">
@@ -3302,10 +3335,7 @@ function renderHistoryItem(item) {
         <small>${escapeHtml(transactionMeta(item, false))}</small>
       </div>
       <strong class="${amountClass(item.type)}">${formatKrw(item.amount)}</strong>
-      <div class="history-actions">
-        <button class="mini-button" type="button" data-edit-transaction-id="${item.id}">수정</button>
-        <button class="mini-button danger" type="button" data-delete-transaction-id="${item.id}">삭제</button>
-      </div>
+      ${actions}
     </article>
   `;
 }
@@ -4133,6 +4163,10 @@ function resetTransactionForm() {
 function startTransactionEdit(transactionId) {
   const transaction = state.transactions.find((item) => item.id === transactionId);
   if (!transaction) return;
+  if (!canManageTransaction(transaction)) {
+    window.alert("다른 작성자가 등록한 거래는 수정할 수 없습니다.");
+    return;
+  }
 
   const transactionForm = document.querySelector("#transactionForm");
   editingTransactionId = transaction.id;
@@ -4163,6 +4197,10 @@ function startTransactionEdit(transactionId) {
 function deleteTransaction(transactionId) {
   const transaction = state.transactions.find((item) => item.id === transactionId);
   if (!transaction) return;
+  if (!canManageTransaction(transaction)) {
+    window.alert("다른 작성자가 등록한 거래는 삭제할 수 없습니다.");
+    return;
+  }
   if (!window.confirm(`'${transaction.memo || transaction.category}' 거래를 삭제할까요?`)) return;
 
   state.transactions = state.transactions.filter((item) => item.id !== transactionId);
@@ -4255,6 +4293,11 @@ function initForms() {
     const id = editingTransactionId || crypto.randomUUID();
     const transaction = transactionPayloadFromForm(form, id);
     const existingIndex = state.transactions.findIndex((item) => item.id === editingTransactionId);
+    if (existingIndex >= 0 && !canManageTransaction(state.transactions[existingIndex])) {
+      window.alert("다른 작성자가 등록한 거래는 수정할 수 없습니다.");
+      resetTransactionForm();
+      return;
+    }
     const goalWarnings = goalWarningsForTransaction(transaction);
 
     if (goalWarnings.length && !window.confirm(`${goalWarnings.join("\n")}\n\n그래도 거래를 저장할까요?`)) {
