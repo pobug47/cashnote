@@ -4175,6 +4175,7 @@ function startTransactionEdit(transactionId) {
   state.selectedTransactionType = transaction.type;
   state.selectedMonth = transaction.date.slice(0, 7);
   state.selectedCalendarDate = transaction.date;
+  state.transactionViewMode = "list";
 
   transactionForm.elements.date.value = transaction.date;
   transactionForm.elements.type.value = transaction.type;
@@ -4192,6 +4193,7 @@ function startTransactionEdit(transactionId) {
   persist();
   render();
   setView("transactions");
+  transactionForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function deleteTransaction(transactionId) {
