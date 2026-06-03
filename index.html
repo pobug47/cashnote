@@ -10,7 +10,7 @@
     <title>자산 보드</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./src/styles.css?v=27" />
+    <link rel="stylesheet" href="./src/styles.css?v=28" />
   </head>
   <body>
     <section id="loginScene" class="login-scene">
@@ -438,10 +438,6 @@
               <strong id="annualDividend"></strong>
               <p>현재 입력된 종목 기준 연 예상 배당입니다.</p>
             </article>
-            <article class="badge-panel">
-              <h2>뱃지</h2>
-              <div id="badges" class="badge-list"></div>
-            </article>
           </div>
 
           <div class="review-layout">
@@ -514,6 +510,16 @@
                 </div>
               </div>
               <div id="nextGoals" class="goal-list"></div>
+            </section>
+
+            <section class="panel review-panel wide-review-panel badge-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>뱃지</h2>
+                  <span>자주 보지 않아도 되는 기록 성취는 아래에서 모아봅니다.</span>
+                </div>
+              </div>
+              <div id="badges" class="badge-list"></div>
             </section>
           </div>
         </section>
@@ -908,7 +914,7 @@
     </div>
 
     <script src="./node_modules/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="./src/app.js?v=27"></script>
-    <script src="./src/pwa.js?v=27"></script>
+    <script src="./src/app.js?v=28"></script>
+    <script src="./src/pwa.js?v=28"></script>
   </body>
 </html>
