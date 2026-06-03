@@ -441,11 +441,30 @@ function loadAdsenseScript(client) {
   document.head.appendChild(script);
 }
 
+function renderAdFallback(message = "광고 네트워크 승인 후 이 영역을 실제 배너로 교체할 수 있습니다.") {
+  const container = document.querySelector("#adBannerContent");
+  if (!container) return;
+
+  container.className = "ad-banner-inner ad-fallback";
+  container.innerHTML = `
+    <span class="ad-label">광고</span>
+    <div>
+      <strong>광고 영역</strong>
+      <p>${escapeHtml(message)}</p>
+    </div>
+    <span class="ad-action">스폰서</span>
+  `;
+}
+
 function renderBottomAdSlot(ads = {}) {
   const container = document.querySelector("#adBannerContent");
   const client = String(ads.adsenseClient || "").trim();
   const slot = String(ads.bottomBannerSlot || "").trim();
-  if (!container || !client || !slot) return;
+  if (!container) return;
+  if (!client || !slot) {
+    renderAdFallback("AdSense client 또는 slot 값이 설정되지 않았습니다.");
+    return;
+  }
 
   loadAdsenseScript(client);
   container.className = "ad-banner-inner ad-live-slot";
@@ -462,8 +481,17 @@ function renderBottomAdSlot(ads = {}) {
     try {
       window.adsbygoogle = window.adsbygoogle || [];
       window.adsbygoogle.push({});
+      window.setTimeout(() => {
+        const ad = container.querySelector(".adsbygoogle");
+        const hasFrame = Boolean(container.querySelector("iframe"));
+        const status = ad?.getAttribute("data-ad-status") || "";
+        if (!hasFrame && status !== "filled") {
+          renderAdFallback("광고 요청은 보냈지만 아직 송출되지 않았습니다. AdSense 사이트 승인, 광고 단위 상태, 광고 재고를 확인해 주세요.");
+        }
+      }, 4500);
     } catch (error) {
       console.warn("AdSense slot could not be initialized", error);
+      renderAdFallback("AdSense 광고를 초기화하지 못했습니다. 설정값과 승인 상태를 확인해 주세요.");
     }
   });
 }
@@ -555,6 +583,12 @@ function renderTheme() {
 function normalizeEmail(value) {
   const email = String(value || "").trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function emailInputError(value) {
+  const text = String(value || "").trim();
+  if (!text) return "이메일을 입력해 주세요.";
+  return normalizeEmail(text) ? "" : "이메일 형식이 올바르지 않습니다. 예: name@example.com";
 }
 
 function normalizeInviteCode(value) {
@@ -1038,15 +1072,30 @@ function initAuth() {
   document.querySelector("#forgotPasswordButton").addEventListener("click", () => {
     openPasswordResetModal(loginForm.elements.email.value);
   });
+  loginForm.elements.email.addEventListener("input", () => {
+    const error = emailInputError(loginForm.elements.email.value);
+    if (!error || !loginForm.elements.email.value.trim()) showLoginScene();
+  });
 
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(loginForm);
-    const email = normalizeEmail(form.get("email"));
+    const rawEmail = String(form.get("email") || "");
+    const emailError = emailInputError(rawEmail);
+    if (emailError) {
+      showLoginScene(emailError);
+      loginForm.elements.email.focus();
+      return;
+    }
+    const email = normalizeEmail(rawEmail);
     const password = String(form.get("password") || "");
     const inviteCode = normalizeInviteCode(form.get("inviteCode"));
 
-    if (!email || !password) return;
+    if (!password) {
+      showLoginScene("비밀번호를 입력해 주세요.");
+      loginForm.elements.password.focus();
+      return;
+    }
 
     try {
       const result = await apiRequest("/api/auth/login", {
