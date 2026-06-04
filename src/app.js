@@ -2763,6 +2763,61 @@ function setExcelImportStatus(message, type = "") {
   status.className = `excel-import-status ${type}`.trim();
 }
 
+function isNativeApp() {
+  return Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",")[1] : result);
+    });
+    reader.addEventListener("error", () => reject(reader.error || new Error("파일을 읽지 못했습니다.")));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function saveBlobInBrowser(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 0);
+}
+
+async function downloadTransactionSampleFile() {
+  const fileName = "거래내역_업로드_샘플.xlsx";
+  const response = await fetch("/api/transactions/sample.xlsx", { credentials: "same-origin" });
+  if (!response.ok) throw new Error("샘플 엑셀 파일을 받을 수 없습니다.");
+
+  const blob = await response.blob();
+  const plugins = window.Capacitor?.Plugins || {};
+  if (isNativeApp() && plugins.Filesystem && plugins.Share) {
+    const data = await blobToBase64(blob);
+    const saved = await plugins.Filesystem.writeFile({
+      path: fileName,
+      data,
+      directory: "CACHE"
+    });
+    await plugins.Share.share({
+      title: "샘플 엑셀 다운로드",
+      text: "거래 내역 업로드 샘플 엑셀 파일입니다.",
+      files: [saved.uri],
+      dialogTitle: "샘플 엑셀 저장"
+    });
+    return;
+  }
+
+  saveBlobInBrowser(blob, fileName);
+}
+
 function normalizeImportedType(value) {
   const text = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
   const typeMap = {
@@ -5361,6 +5416,16 @@ function initForms() {
     resetTransactionForm();
   });
   setTransactionFormMode();
+
+  document.querySelector("#downloadTransactionSample")?.addEventListener("click", async () => {
+    setExcelImportStatus("샘플 엑셀 파일을 준비하고 있습니다.");
+    try {
+      await downloadTransactionSampleFile();
+      setExcelImportStatus("샘플 엑셀 파일을 다운로드했습니다.", "success");
+    } catch (error) {
+      setExcelImportStatus(`샘플 엑셀 다운로드에 실패했습니다. ${error.message}`, "error");
+    }
+  });
 
   document.querySelector("#importTransactionExcel").addEventListener("click", async () => {
     const fileInput = document.querySelector("#transactionExcelInput");

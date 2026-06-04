@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@capacitor/core": "^7.6.6",
+    "@capacitor/filesystem": "^7.1.8",
+    "@capacitor/share": "^7.0.4",
     "nodemailer": "^8.0.10",
     "pg": "^8.21.0",
     "read-excel-file": "^9.0.10",
