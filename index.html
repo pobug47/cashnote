@@ -174,10 +174,36 @@
           <div class="work-grid">
             <form id="transactionForm" class="panel form-panel">
               <h2 id="transactionFormTitle">거래 추가</h2>
-              <label>
-                날짜
-                <input name="date" type="date" required />
-              </label>
+              <div class="form-field date-picker-field">
+                <span id="transactionDateLabel" class="field-label">날짜</span>
+                <div class="date-input-row">
+                  <input
+                    id="transactionDateInput"
+                    name="date"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="10"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    placeholder="YYYY-MM-DD"
+                    aria-labelledby="transactionDateLabel"
+                    autocomplete="off"
+                    required
+                  />
+                  <button
+                    id="transactionDatePickerButton"
+                    class="date-picker-button"
+                    type="button"
+                    aria-label="달력 열기"
+                    aria-expanded="false"
+                    aria-controls="transactionDatePicker"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v15H3V6a2 2 0 0 1 2-2Z" />
+                    </svg>
+                  </button>
+                </div>
+                <div id="transactionDatePicker" class="date-picker-popover" hidden></div>
+              </div>
               <label>
                 유형
                 <select name="type" required>

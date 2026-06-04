@@ -119,11 +119,13 @@ let supportRefreshPromise = null;
 let editingSupportTicketId = null;
 let activeNoticeModalIds = [];
 let budgetBoardTab = "expense";
+let transactionDatePickerMonth = null;
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
 const appViews = ["dashboard", "transactions", "budgets", "investments", "insights", "support", "settings", "admin"];
 const securityTabs = ["details", "announcements", "projections"];
+const datePickerWeekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
 const formatter = new Intl.NumberFormat("ko-KR", {
   style: "currency",
@@ -1870,6 +1872,157 @@ function monthDay(month, day) {
   return `${year}-${String(monthIndex).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function parseDateValue(value) {
+  if (!isDateValue(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return null;
+  return { year, month, day };
+}
+
+function isRealDateValue(value) {
+  return Boolean(parseDateValue(value));
+}
+
+function syncTransactionDatePickerMonth(value) {
+  const sourceDate = isRealDateValue(value) ? value : defaultTransactionDate();
+  transactionDatePickerMonth = sourceDate.slice(0, 7);
+}
+
+function renderTransactionDatePicker() {
+  const picker = document.querySelector("#transactionDatePicker");
+  const input = document.querySelector("#transactionDateInput");
+  if (!picker || !input) return;
+
+  const selectedDate = isRealDateValue(input.value) ? input.value : defaultTransactionDate();
+  if (!isMonthValue(transactionDatePickerMonth)) {
+    syncTransactionDatePickerMonth(selectedDate);
+  }
+
+  const pickerMonth = transactionDatePickerMonth;
+  const firstDate = monthDate(pickerMonth);
+  const year = firstDate.getFullYear();
+  const monthIndex = firstDate.getMonth();
+  const firstWeekday = firstDate.getDay();
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  const today = todayDateValue();
+  const days = [];
+
+  for (let index = 0; index < firstWeekday; index += 1) {
+    days.push(`<span class="date-picker-empty" aria-hidden="true"></span>`);
+  }
+
+  for (let day = 1; day <= lastDay; day += 1) {
+    const dateValue = monthDay(pickerMonth, day);
+    const classes = ["date-picker-day"];
+    if (dateValue === selectedDate) classes.push("selected");
+    if (dateValue === today) classes.push("today");
+    days.push(`
+      <button class="${classes.join(" ")}" type="button" data-date-picker-day="${dateValue}" aria-pressed="${dateValue === selectedDate}">
+        ${day}
+      </button>
+    `);
+  }
+
+  picker.innerHTML = `
+    <div class="date-picker-header">
+      <button type="button" data-date-picker-action="prev" aria-label="이전 달">‹</button>
+      <strong>${monthLabelFormatter.format(firstDate)}</strong>
+      <button type="button" data-date-picker-action="next" aria-label="다음 달">›</button>
+    </div>
+    <div class="date-picker-weekdays" aria-hidden="true">
+      ${datePickerWeekdays.map((day) => `<span>${day}</span>`).join("")}
+    </div>
+    <div class="date-picker-grid">
+      ${days.join("")}
+    </div>
+  `;
+}
+
+function openTransactionDatePicker() {
+  const picker = document.querySelector("#transactionDatePicker");
+  const button = document.querySelector("#transactionDatePickerButton");
+  const input = document.querySelector("#transactionDateInput");
+  if (!picker || !button || !input) return;
+
+  syncTransactionDatePickerMonth(input.value);
+  renderTransactionDatePicker();
+  picker.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+}
+
+function closeTransactionDatePicker() {
+  const picker = document.querySelector("#transactionDatePicker");
+  const button = document.querySelector("#transactionDatePickerButton");
+  if (!picker || !button) return;
+
+  picker.hidden = true;
+  button.setAttribute("aria-expanded", "false");
+}
+
+function toggleTransactionDatePicker() {
+  const picker = document.querySelector("#transactionDatePicker");
+  if (!picker) return;
+  if (picker.hidden) openTransactionDatePicker();
+  else closeTransactionDatePicker();
+}
+
+function selectTransactionDate(dateValue) {
+  if (!isRealDateValue(dateValue)) return;
+  const input = document.querySelector("#transactionDateInput");
+  if (!input) return;
+
+  input.value = dateValue;
+  input.setCustomValidity("");
+  syncTransactionDatePickerMonth(dateValue);
+  renderTransactionDatePicker();
+  closeTransactionDatePicker();
+  input.focus({ preventScroll: true });
+}
+
+function initTransactionDatePicker() {
+  const field = document.querySelector(".date-picker-field");
+  const input = document.querySelector("#transactionDateInput");
+  const button = document.querySelector("#transactionDatePickerButton");
+  const picker = document.querySelector("#transactionDatePicker");
+  if (!field || !input || !button || !picker || button.dataset.ready === "true") return;
+
+  button.dataset.ready = "true";
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleTransactionDatePicker();
+  });
+
+  input.addEventListener("input", () => {
+    input.setCustomValidity("");
+    if (isRealDateValue(input.value)) {
+      syncTransactionDatePickerMonth(input.value);
+      renderTransactionDatePicker();
+    }
+  });
+
+  input.addEventListener("focus", () => {
+    if (!picker.hidden) renderTransactionDatePicker();
+  });
+
+  picker.addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-date-picker-action]");
+    if (actionButton) {
+      transactionDatePickerMonth = addMonths(transactionDatePickerMonth || state.selectedMonth, actionButton.dataset.datePickerAction === "prev" ? -1 : 1);
+      renderTransactionDatePicker();
+      return;
+    }
+
+    const dayButton = event.target.closest("[data-date-picker-day]");
+    if (dayButton) selectTransactionDate(dayButton.dataset.datePickerDay);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!field.contains(event.target)) closeTransactionDatePicker();
+  });
+}
+
 function dividendBasisForTab(tab = state.selectedSecurityTab) {
   return tab === "announcements" ? "declaration" : "pay";
 }
@@ -2471,6 +2624,8 @@ function prefillTransactionForm({ type, category, amount, memo }) {
   editingTransactionId = null;
   transactionForm.reset();
   transactionForm.elements.date.value = defaultTransactionDate();
+  syncTransactionDatePickerMonth(transactionForm.elements.date.value);
+  renderTransactionDatePicker();
   transactionForm.elements.type.value = type;
   syncCategoryMenu(category);
   if (transactionForm.elements.category.value !== category) {
@@ -4533,7 +4688,7 @@ function transactionPayloadFromForm(form, id) {
 
   return {
     id,
-    date: form.get("date"),
+    date: String(form.get("date") || "").trim(),
     type,
     category,
     amount: Number(form.get("amount")),
@@ -4546,6 +4701,15 @@ function transactionPayloadFromForm(form, id) {
 }
 
 function validateTransactionForm(transactionForm, form, category, paymentAccount) {
+  const dateInput = transactionForm.elements.date;
+  const dateValue = String(form.get("date") || "").trim();
+  if (!isRealDateValue(dateValue)) {
+    dateInput.setCustomValidity("날짜를 YYYY-MM-DD 형식으로 입력해 주세요.");
+    dateInput.reportValidity();
+    return false;
+  }
+  dateInput.setCustomValidity("");
+
   if (!category) {
     transactionForm.elements.customCategory.setCustomValidity("카테고리를 입력해 주세요.");
     transactionForm.elements.customCategory.reportValidity();
@@ -4572,6 +4736,7 @@ function setTransactionFormMode() {
 function resetTransactionForm() {
   const transactionForm = document.querySelector("#transactionForm");
   editingTransactionId = null;
+  closeTransactionDatePicker();
   transactionForm.reset();
   syncTransactionDateInput();
   syncAuthorMenu();
@@ -4599,6 +4764,8 @@ function startTransactionEdit(transactionId) {
   state.transactionViewMode = "list";
 
   transactionForm.elements.date.value = transaction.date;
+  syncTransactionDatePickerMonth(transaction.date);
+  renderTransactionDatePicker();
   transactionForm.elements.type.value = transaction.type;
   syncAuthorMenu(transaction.author || null);
   syncCategoryMenu(transaction.category);
@@ -4679,6 +4846,7 @@ function goalWarningsForTransaction(transaction) {
 
 function initForms() {
   const transactionForm = document.querySelector("#transactionForm");
+  initTransactionDatePicker();
   syncTransactionDateInput();
   syncAuthorMenu();
   syncCategoryMenu();
@@ -4989,7 +5157,10 @@ function initSupportControls() {
 function syncTransactionDateInput() {
   const transactionForm = document.querySelector("#transactionForm");
   if (!transactionForm) return;
-  transactionForm.date.value = defaultTransactionDate();
+  transactionForm.elements.date.value = defaultTransactionDate();
+  transactionForm.elements.date.setCustomValidity("");
+  syncTransactionDatePickerMonth(transactionForm.elements.date.value);
+  renderTransactionDatePicker();
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => {
@@ -5176,6 +5347,9 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && !document.querySelector("#noticeModal").hidden) {
     closeNoticeModal();
+  }
+  if (event.key === "Escape" && !document.querySelector("#transactionDatePicker")?.hidden) {
+    closeTransactionDatePicker();
   }
 });
 
