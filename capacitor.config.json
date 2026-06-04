@@ -1,0 +1,12 @@
+{
+  "appId": "com.grapewillow.cashnote",
+  "appName": "Cashnote",
+  "webDir": "www",
+  "server": {
+    "url": "https://cn.grapewillow.com",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

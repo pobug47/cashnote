@@ -3313,14 +3313,30 @@ textarea {
   .login-scene {
     min-height: 100dvh;
     place-items: start center;
-    padding: 16px;
+    padding: max(14px, env(safe-area-inset-top, 0px)) 14px max(18px, env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
+  }
+
+  .login-card {
+    width: 100%;
+    gap: 14px;
+    padding: 22px;
+  }
+
+  .login-card h1 {
+    margin: 8px 0 0;
+    font-size: 28px;
+  }
+
+  .login-card p {
+    margin: 6px 0 0;
+    font-size: 15px;
   }
 
   .content {
     width: 100%;
     min-width: 0;
-    padding: 20px;
+    padding: 18px 14px calc(92px + env(safe-area-inset-bottom, 0px));
   }
 
   .app-shell,
@@ -3331,13 +3347,103 @@ textarea {
     min-width: 0;
   }
 
+  .app-shell {
+    display: block;
+    min-height: 100dvh;
+    background: var(--bg);
+  }
+
   h1 {
-    font-size: 25px;
+    font-size: 24px;
     line-height: 1.25;
   }
 
   .month-control {
     max-width: 100%;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    display: grid;
+    gap: 12px;
+    padding: max(12px, env(safe-area-inset-top, 0px)) 12px 10px;
+    box-shadow: 0 12px 28px rgba(var(--theme-dark-rgb), 0.18);
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand > div > span {
+    display: none;
+  }
+
+  .ledger-scope-switch {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .ledger-scope-switch[hidden] {
+    display: none !important;
+  }
+
+  .ledger-scope-button {
+    min-height: 44px;
+    padding: 9px 11px;
+  }
+
+  .ledger-scope-button span {
+    display: none;
+  }
+
+  .nav-list {
+    display: flex;
+    gap: 8px;
+    margin: 0 -12px;
+    padding: 0 12px 2px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .nav-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    min-width: auto;
+    min-height: 42px;
+    padding: 10px 13px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #d8e8dd;
+    background: rgba(255, 255, 255, 0.06);
+    scroll-snap-align: start;
+  }
+
+  .nav-item.active {
+    color: var(--theme-dark);
+    border-color: transparent;
+    background: var(--theme-accent);
+  }
+
+  .storage-panel {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top, 0px));
+    right: 12px;
+  }
+
+  .storage-panel .ghost-button {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .modal-backdrop {
@@ -3382,7 +3488,11 @@ textarea {
   }
 
   .bottom-ad-banner {
-    padding: 8px 12px;
+    position: sticky;
+    bottom: 0;
+    z-index: 55;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom, 0px));
+    background: rgba(244, 246, 243, 0.98);
   }
 
   .help-guide {
@@ -3421,15 +3531,55 @@ textarea {
 
   .ad-banner-inner {
     grid-template-columns: auto minmax(0, 1fr);
+    min-height: 50px;
+    padding: 8px 10px;
   }
 
   .ad-action {
     display: none;
   }
 
+  .ad-label {
+    min-width: 36px;
+    height: 26px;
+    font-size: 11px;
+  }
+
+  .ad-banner-inner strong {
+    font-size: 13px;
+  }
+
+  .ad-banner-inner p {
+    font-size: 11px;
+  }
+
+  .ad-live-slot,
+  .ad-live-slot .adsbygoogle {
+    height: 50px !important;
+    min-height: 50px;
+    max-height: 50px;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .topbar h1 {
+    font-size: clamp(22px, 6vw, 28px);
+  }
+
+  .month-control {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    width: 100%;
+    padding: 6px;
+  }
+
+  .month-control button {
+    min-height: 40px;
   }
 
   .nav-list,
@@ -3459,6 +3609,70 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-card {
+    min-height: 92px;
+    padding: 14px;
+  }
+
+  .metric-card strong {
+    margin-top: 8px;
+    font-size: 21px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .panel-heading > div,
+  .transaction-heading-actions {
+    width: 100%;
+  }
+
+  .transaction-heading-actions {
+    justify-content: space-between;
+  }
+
+  .transaction-view-controls {
+    width: 100%;
+  }
+
+  .transaction-view-controls button {
+    flex: 1;
+    min-height: 38px;
+  }
+
+  .form-panel {
+    gap: 12px;
+  }
+
+  input,
+  select,
+  textarea,
+  .primary-button,
+  .secondary-button,
+  .danger-button {
+    min-height: 46px;
+  }
+
+  #transactionSubmitButton {
+    position: sticky;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    min-height: 52px;
+    box-shadow: 0 12px 30px rgba(var(--theme-dark-rgb), 0.18);
+  }
+
   .analysis-narrative,
   .recommendation-item {
     grid-template-columns: 1fr;
@@ -3470,6 +3684,7 @@ textarea {
 
   .budget-chart-board {
     grid-template-columns: 30px minmax(0, 1fr);
+    min-height: 240px;
   }
 
   .budget-bar-grid {
@@ -3489,19 +3704,96 @@ textarea {
   }
 
   .history-item {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .history-item .transaction-summary {
+    grid-column: 1 / 2;
+  }
+
+  .history-item > strong[class^="amount-"] {
+    grid-column: 2 / 3;
+    align-self: start;
+    padding-top: 0;
+    font-size: 14px;
+  }
+
+  .history-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
 
   .excel-import-controls {
     grid-template-columns: 1fr;
   }
 
-  .history-actions {
-    justify-content: flex-end;
-  }
-
   .bar-row {
     grid-template-columns: 1fr;
+  }
+
+  .monthly-transaction-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .monthly-transaction-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 64px;
+  }
+
+  .calendar-weekdays,
+  .transaction-calendar {
+    grid-template-columns: repeat(7, minmax(42px, 1fr));
+    min-width: 0;
+  }
+
+  .calendar-weekdays {
+    gap: 3px;
+    font-size: 11px;
+  }
+
+  .transaction-calendar {
+    gap: 3px;
+  }
+
+  .calendar-day {
+    min-height: 64px;
+    padding: 6px 4px;
+    gap: 3px;
+    text-align: center;
+  }
+
+  .calendar-totals {
+    min-height: 0;
+    font-size: 10px;
+  }
+
+  .calendar-chips {
+    display: none;
+  }
+
+  .calendar-detail-heading {
+    flex-direction: column;
+  }
+
+  .calendar-detail-totals {
+    justify-content: flex-start;
+  }
+
+  .date-picker-popover {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    width: auto;
+    max-height: min(440px, calc(100dvh - 120px));
+    overflow: auto;
+  }
+
+  .date-picker-day {
+    min-height: 38px;
   }
 }
 
