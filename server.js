@@ -414,6 +414,47 @@ function publicSupportTicket(row) {
     : null;
 }
 
+function supportTicketsFromLedgerState(ledgerId, state) {
+  const tickets = Array.isArray(state?.supportTickets) ? state.supportTickets : [];
+  const ledgerEmail = normalizeEmail(state?.auth?.email);
+  return tickets
+    .map((ticket) => publicSupportTicket({
+      id: ticket?.id,
+      ledgerId,
+      email: normalizeEmail(ticket?.email) || ledgerEmail,
+      author: ticket?.author,
+      category: ticket?.category,
+      title: ticket?.title,
+      body: ticket?.body,
+      status: ticket?.status,
+      attachment: ticket?.attachment,
+      adminReply: ticket?.adminReply,
+      repliedBy: ticket?.repliedBy,
+      repliedAt: ticket?.repliedAt,
+      createdAt: ticket?.createdAt,
+      updatedAt: ticket?.updatedAt
+    }))
+    .filter((ticket) => ticket?.id && ticket.title && ticket.body);
+}
+
+function mergeSupportTickets(primaryRows, legacyRows) {
+  const seen = new Set();
+  return [...primaryRows, ...legacyRows]
+    .map(publicSupportTicket)
+    .filter((ticket) => {
+      if (!ticket?.id || seen.has(ticket.id)) return false;
+      seen.add(ticket.id);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftStatus = supportStatuses.indexOf(left.status);
+      const rightStatus = supportStatuses.indexOf(right.status);
+      const statusOrder = (leftStatus === -1 ? supportStatuses.length : leftStatus) - (rightStatus === -1 ? supportStatuses.length : rightStatus);
+      if (statusOrder) return statusOrder;
+      return (Date.parse(right.createdAt || "") || 0) - (Date.parse(left.createdAt || "") || 0);
+    });
+}
+
 function normalizeSupportAttachment(value) {
   if (!value || typeof value !== "object") return null;
 
@@ -1279,7 +1320,10 @@ const server = http.createServer(async (req, res) => {
         `,
         [session.ledgerId, session.email]
       );
-      sendJson(res, 200, { tickets: result.rows.map(publicSupportTicket) });
+      const legacyState = await getLedgerState(db, session.ledgerId);
+      const legacyTickets = supportTicketsFromLedgerState(session.ledgerId, legacyState)
+        .filter((ticket) => !normalizeEmail(ticket.email) || normalizeEmail(ticket.email) === normalizeEmail(session.email));
+      sendJson(res, 200, { tickets: mergeSupportTickets(result.rows, legacyTickets) });
     } catch (error) {
       sendJson(res, 500, { error: "문의 목록을 불러오지 못했습니다.", detail: error.message });
     }
@@ -1449,7 +1493,13 @@ const server = http.createServer(async (req, res) => {
           END,
           created_at DESC
       `);
-      sendJson(res, 200, { tickets: result.rows.map(publicSupportTicket) });
+      const legacyResult = await db.query(`
+        SELECT id, state_json AS "stateJson"
+        FROM ledgers
+        WHERE jsonb_typeof(state_json -> 'supportTickets') = 'array'
+      `);
+      const legacyTickets = legacyResult.rows.flatMap((row) => supportTicketsFromLedgerState(row.id, row.stateJson));
+      sendJson(res, 200, { tickets: mergeSupportTickets(result.rows, legacyTickets) });
     } catch (error) {
       sendJson(res, 500, { error: "관리자 문의 목록을 불러오지 못했습니다.", detail: error.message });
     }
