@@ -257,9 +257,9 @@ function todayDateValue() {
 }
 
 function defaultTransactionDate() {
-  if (state.selectedCalendarDate?.startsWith(state.selectedMonth)) return state.selectedCalendarDate;
   const today = todayDateValue();
   if (today.startsWith(state.selectedMonth)) return today;
+  if (state.selectedCalendarDate?.startsWith(state.selectedMonth)) return state.selectedCalendarDate;
   return `${state.selectedMonth}-01`;
 }
 
@@ -2699,17 +2699,24 @@ function budgetScopeLabel(budget) {
   return owner ? `${owner} 개인 예산` : "개인 예산";
 }
 
-function applicableBudgetsForTransaction(type, author = currentAuthorName()) {
+function applicableBudgetsForTransaction(type, category = "") {
   if (type !== "expense") return [];
   state.budgets = normalizeBudgets(state.budgets);
-  if (!hasSharedLedger()) return state.budgets.filter((budget) => budget.scope !== "shared");
+  const normalizedCategory = String(category || "").trim().toLowerCase();
+  const seen = new Set();
 
-  if (ledgerScope() === "shared") {
-    return state.budgets.filter((budget) => budget.scope === "shared");
-  }
-
-  const normalizedAuthor = String(author || currentAuthorName()).trim();
-  return state.budgets.filter((budget) => budget.scope !== "shared" && (!budget.author || budget.author === normalizedAuthor));
+  return [...state.budgets]
+    .sort((a, b) => {
+      const aMatch = String(a.category || "").trim().toLowerCase() === normalizedCategory ? 0 : 1;
+      const bMatch = String(b.category || "").trim().toLowerCase() === normalizedCategory ? 0 : 1;
+      return aMatch - bMatch || String(a.category || "").localeCompare(String(b.category || ""), "ko");
+    })
+    .filter((budget) => {
+      const key = String(budget.category || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function budgetForTransaction(item = {}) {
@@ -2726,8 +2733,8 @@ function syncTransactionBudgetMenu(selectedBudgetId = null) {
   if (!transactionForm || !field || !transactionForm.elements.budgetId) return;
 
   const type = transactionForm.elements.type.value;
-  const author = transactionForm.elements.author?.value || currentAuthorName();
-  const budgets = applicableBudgetsForTransaction(type, author);
+  const category = resolveTransactionCategory(new FormData(transactionForm));
+  const budgets = applicableBudgetsForTransaction(type, category);
   field.hidden = type !== "expense";
   transactionForm.elements.budgetId.innerHTML = `
     <option value="">예산 선택 안 함</option>
