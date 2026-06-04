@@ -1,6 +1,5 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const XLSX = require("xlsx");
 
 const inputPath = "C:/Users/User/Downloads/2026.05 가계부.xlsx";
 const projectOutputDir = path.join(__dirname, "..", "downloads");
@@ -36,50 +35,64 @@ function paymentMethod(paymentName) {
 
 fs.mkdirSync(projectOutputDir, { recursive: true });
 
-const sourceWorkbook = XLSX.readFile(inputPath, { cellDates: true });
-const sourceSheet = sourceWorkbook.Sheets["호정 지출"];
-if (!sourceSheet) throw new Error("호정 지출 시트를 찾을 수 없습니다.");
-
-const sourceRows = XLSX.utils.sheet_to_json(sourceSheet, { defval: "", raw: false });
-const outputRows = [["날짜", "유형", "카테고리", "금액", "결제/이체 수단", "카드/은행/증권사명", "메모"]];
-
-sourceRows.forEach((row) => {
-  const date = normalizeDate(row["날짜"]);
-  const amount = parseAmount(row["금액"]);
-  const category = String(row["구분1"] || row["사용"] || "기타").trim();
-  if (!date || !amount || !category) return;
-
-  const memo = [row["사용"], row["구분2"], row["비고"]]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join(" · ");
-
-  outputRows.push([
-    date,
-    "지출",
-    category,
-    amount,
-    paymentMethod(row["결제"]),
-    String(row["결제"] || "").trim(),
-    memo
-  ]);
-});
-
-const outputWorkbook = XLSX.utils.book_new();
-const outputSheet = XLSX.utils.aoa_to_sheet(outputRows);
-outputSheet["!cols"] = [{ wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 48 }];
-outputSheet["!autofilter"] = { ref: `A1:G${outputRows.length}` };
-for (let rowIndex = 2; rowIndex <= outputRows.length; rowIndex += 1) {
-  const amountCell = outputSheet[`D${rowIndex}`];
-  if (amountCell) amountCell.z = "#,##0";
+function rowsToObjects(rows) {
+  const headers = (rows[0] || []).map((header) => String(header || "").trim());
+  return rows.slice(1).map((row) =>
+    headers.reduce((item, header, index) => {
+      if (header) item[header] = row?.[index] ?? "";
+      return item;
+    }, {})
+  );
 }
 
-XLSX.utils.book_append_sheet(outputWorkbook, outputSheet, "거래내역");
-XLSX.writeFile(outputWorkbook, projectOutputPath);
-fs.copyFileSync(projectOutputPath, userDownloadPath);
+function excelCell(value, options = {}) {
+  const cell = { value: value ?? "" };
+  if (options.bold) cell.fontWeight = "bold";
+  if (options.format) cell.format = options.format;
+  return cell;
+}
 
-console.log(JSON.stringify({
-  rows: outputRows.length - 1,
-  projectOutputPath,
-  userDownloadPath
-}, null, 2));
+(async () => {
+  const { default: readXlsxFile } = await import("read-excel-file/node");
+  const { default: writeXlsxFile } = await import("write-excel-file/node");
+  const sourceRows = rowsToObjects(await readXlsxFile(inputPath, { sheet: "호정 지출" }));
+  const outputRows = [
+    ["날짜", "유형", "카테고리", "금액", "결제/이체 수단", "카드/은행/증권사명", "메모"].map((value) => excelCell(value, { bold: true }))
+  ];
+
+  sourceRows.forEach((row) => {
+    const date = normalizeDate(row["날짜"]);
+    const amount = parseAmount(row["금액"]);
+    const category = String(row["구분1"] || row["사용"] || "기타").trim();
+    if (!date || !amount || !category) return;
+
+    const memo = [row["사용"], row["구분2"], row["비고"]]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" · ");
+
+    outputRows.push([
+      excelCell(date),
+      excelCell("지출"),
+      excelCell(category),
+      excelCell(amount, { format: "#,##0" }),
+      excelCell(paymentMethod(row["결제"])),
+      excelCell(String(row["결제"] || "").trim()),
+      excelCell(memo)
+    ]);
+  });
+
+  const workbook = await writeXlsxFile([{ sheet: "거래내역", data: outputRows }], { buffer: true });
+  const buffer = await workbook.toBuffer();
+  fs.writeFileSync(projectOutputPath, buffer);
+  fs.copyFileSync(projectOutputPath, userDownloadPath);
+
+  console.log(JSON.stringify({
+    rows: outputRows.length - 1,
+    projectOutputPath,
+    userDownloadPath
+  }, null, 2));
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

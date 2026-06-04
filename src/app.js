@@ -2791,10 +2791,10 @@ function normalizeImportedDate(value) {
     return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
   }
 
-  if (typeof value === "number" && window.XLSX?.SSF) {
-    const parsed = window.XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
     }
   }
 
@@ -2860,10 +2860,19 @@ function deduplicateTransactions(transactions) {
   return [...uniqueTransactions.values()];
 }
 
-function importTransactionsFromWorkbook(workbook) {
-  const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const rows = window.XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: true });
+function excelRowsToObjects(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return [];
+  const headers = (rows[0] || []).map((header) => String(header || "").trim());
+  return rows.slice(1).map((row) =>
+    headers.reduce((item, header, index) => {
+      if (header) item[header] = row?.[index] ?? "";
+      return item;
+    }, {})
+  );
+}
+
+function importTransactionsFromExcelRows(excelRows) {
+  const rows = excelRowsToObjects(excelRows);
   const results = rows.map((row, index) => transactionFromImportedRow(row, index + 2));
   const errors = results.filter((result) => result.error).map((result) => result.error);
   const transactions = results.map((result) => result.transaction).filter(Boolean);
@@ -3494,24 +3503,24 @@ function renderBudgetChart(rows) {
 }
 
 function exportBudgetsToExcel() {
-  if (!window.XLSX) {
+  if (!window.writeXlsxFile) {
     setFormStatus("#budgetStatus", "엑셀 저장 라이브러리를 불러오지 못했습니다.", "error");
     return;
   }
 
   const rows = visibleBudgetRows();
-  const worksheetRows = rows.map((row) => ({
-    구분: budgetBoardTab === "expense" ? "지출 예산" : budgetBoardTab === "income" ? "수입" : "달력",
-    항목: row.label,
-    금액: row.amount,
-    사용금액: row.used || 0,
-    기준월: state.selectedMonth,
-    설명: row.detail || ""
-  }));
-  const worksheet = window.XLSX.utils.json_to_sheet(worksheetRows.length ? worksheetRows : [{ 구분: "", 항목: "", 금액: 0, 사용금액: 0, 기준월: state.selectedMonth, 설명: "" }]);
-  const workbook = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(workbook, worksheet, "예산현황");
-  window.XLSX.writeFile(workbook, `cashnote-budget-${state.selectedMonth}.xlsx`);
+  const typeLabel = budgetBoardTab === "expense" ? "지출 예산" : budgetBoardTab === "income" ? "수입" : "달력";
+  const sheetRows = [
+    ["구분", "항목", "금액", "사용금액", "기준월", "설명"].map((value) => ({ value, fontWeight: "bold" })),
+    ...(rows.length ? rows : [{ label: "", amount: 0, used: 0, detail: "" }]).map((row) =>
+      [typeLabel, row.label, row.amount, row.used || 0, state.selectedMonth, row.detail || ""].map((value) => ({ value }))
+    )
+  ];
+  window.writeXlsxFile(sheetRows, { sheet: "예산현황" })
+    .toFile(`cashnote-budget-${state.selectedMonth}.xlsx`)
+    .catch((error) => {
+      setFormStatus("#budgetStatus", `엑셀 파일을 저장하지 못했습니다. ${error.message}`, "error");
+    });
 }
 
 function scrollToBudgetForm() {
@@ -5353,29 +5362,25 @@ function initForms() {
   });
   setTransactionFormMode();
 
-  document.querySelector("#importTransactionExcel").addEventListener("click", () => {
+  document.querySelector("#importTransactionExcel").addEventListener("click", async () => {
     const fileInput = document.querySelector("#transactionExcelInput");
     const file = fileInput.files?.[0];
     if (!file) {
       setExcelImportStatus("업로드할 엑셀 파일을 선택해 주세요.", "error");
       return;
     }
-    if (!window.XLSX) {
+    if (!window.readXlsxFile) {
       setExcelImportStatus("엑셀 기능을 불러오지 못했습니다. 화면을 새로고침해 주세요.", "error");
       return;
     }
 
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      try {
-        const workbook = window.XLSX.read(reader.result, { type: "array", cellDates: true });
-        importTransactionsFromWorkbook(workbook);
-        fileInput.value = "";
-      } catch (error) {
-        setExcelImportStatus(`엑셀 파일을 읽지 못했습니다. ${error.message}`, "error");
-      }
-    });
-    reader.readAsArrayBuffer(file);
+    try {
+      const rows = await window.readXlsxFile(file);
+      importTransactionsFromExcelRows(rows);
+      fileInput.value = "";
+    } catch (error) {
+      setExcelImportStatus(`엑셀 파일을 읽지 못했습니다. ${error.message}`, "error");
+    }
   });
 
   const securityForm = document.querySelector("#securityForm");

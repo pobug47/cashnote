@@ -9,13 +9,17 @@
     "pwa:icons": "node scripts/generate-pwa-icons.js",
     "check": "node --check server.js && node --check src/app.js",
     "cap:sync": "cap sync android",
-    "android": "cap open android"
+    "android": "cap open android",
+    "android:apk:debug": "cd android && gradlew.bat assembleDebug",
+    "android:apk:release": "cd android && gradlew.bat assembleRelease",
+    "android:bundle": "cd android && gradlew.bat bundleRelease"
   },
   "dependencies": {
     "@capacitor/core": "^7.6.6",
     "nodemailer": "^8.0.10",
     "pg": "^8.21.0",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "^9.0.10",
+    "write-excel-file": "^4.0.7"
   },
   "devDependencies": {
     "@capacitor/android": "^7.6.6",

@@ -2,7 +2,6 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const XLSX = require("xlsx");
 const { Pool } = require("pg");
 const nodemailer = require("nodemailer");
 
@@ -93,7 +92,8 @@ function securityHeaders(headers = {}) {
 
 function isPublicStaticPath(requestedPath) {
   if (requestedPath === "/index.html" || requestedPath === "/manifest.webmanifest" || requestedPath === "/service-worker.js") return true;
-  if (requestedPath === "/node_modules/xlsx/dist/xlsx.full.min.js") return true;
+  if (requestedPath === "/node_modules/read-excel-file/bundle/read-excel-file.min.js") return true;
+  if (requestedPath === "/node_modules/write-excel-file/bundle/write-excel-file.min.js") return true;
   if (["/src/app.js", "/src/styles.css", "/src/pwa.js"].includes(requestedPath)) return true;
   if (requestedPath.startsWith("/assets/")) return !requestedPath.split("/").some((part) => part.startsWith("."));
   return false;
@@ -877,23 +877,44 @@ function applyInviteAuthorMapping(state, email, memberName) {
   };
 }
 
-function buildTransactionSampleWorkbook() {
-  const month = new Date().toISOString().slice(0, 7);
-  const rows = [
-    ["날짜", "유형", "카테고리", "금액", "결제/이체 수단", "카드/은행/증권사명", "메모"],
-    [`${month}-01`, "수입", "급여", 3200000, "계좌입금", "국민은행", "월급"],
-    [`${month}-05`, "지출", "식비", 12500, "신용카드", "국민카드", "점심"],
-    [`${month}-10`, "저축/투자", "배당주", 700000, "증권계좌", "미래에셋증권", "TSLY 매수"]
-  ];
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  worksheet["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 22 }];
-  XLSX.utils.book_append_sheet(workbook, worksheet, "거래내역");
-  return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+function excelCell(value, options = {}) {
+  const cell = { value: value ?? "" };
+  if (options.bold) cell.fontWeight = "bold";
+  if (options.width) cell.width = options.width;
+  return cell;
 }
 
-function buildLedgerExportWorkbook(state = {}) {
-  const workbook = XLSX.utils.book_new();
+function excelHeaderRow(headers) {
+  return headers.map((header) => excelCell(header, { bold: true }));
+}
+
+function objectRowsToExcelRows(rows, fallbackRow) {
+  const sourceRows = rows.length ? rows : [fallbackRow];
+  const headers = Object.keys(sourceRows[0] || fallbackRow || {});
+  return [
+    excelHeaderRow(headers),
+    ...sourceRows.map((row) => headers.map((header) => excelCell(row[header])))
+  ];
+}
+
+async function writeWorkbookBuffer(sheets) {
+  const { default: writeXlsxFile } = await import("write-excel-file/node");
+  const workbook = await writeXlsxFile(sheets, { buffer: true });
+  return workbook.toBuffer();
+}
+
+async function buildTransactionSampleWorkbook() {
+  const month = new Date().toISOString().slice(0, 7);
+  const rows = [
+    excelHeaderRow(["날짜", "유형", "카테고리", "금액", "결제/이체 수단", "카드/은행/증권사명", "메모"]),
+    [`${month}-01`, "수입", "급여", 3200000, "계좌입금", "국민은행", "월급"].map((value) => excelCell(value)),
+    [`${month}-05`, "지출", "식비", 12500, "신용카드", "국민카드", "점심"].map((value) => excelCell(value)),
+    [`${month}-10`, "저축/투자", "배당주", 700000, "증권계좌", "미래에셋증권", "TSLY 매수"].map((value) => excelCell(value))
+  ];
+  return writeWorkbookBuffer([{ sheet: "거래내역", data: rows }]);
+}
+
+async function buildLedgerExportWorkbook(state = {}) {
   const transactions = Array.isArray(state.transactions) ? state.transactions : [];
   const securities = Array.isArray(state.securities) ? state.securities : [];
   const goals = Array.isArray(state.monthlyGoals) ? state.monthlyGoals : [];
@@ -924,22 +945,32 @@ function buildLedgerExportWorkbook(state = {}) {
     적용월: item.month || ""
   }));
 
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(transactionRows.length ? transactionRows : [{ 날짜: "", 유형: "", 카테고리: "", 금액: "" }]), "거래내역");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(securityRows.length ? securityRows : [{ 티커: "", 종목명: "", 수량: "", 평단가: "" }]), "투자배당");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(goalRows.length ? goalRows : [{ 목표ID: "", 유형: "", 이름: "", 값: "" }]), "목표");
-  XLSX.utils.book_append_sheet(
-    workbook,
-    XLSX.utils.json_to_sheet([
-      {
-        이름: state.profile?.name || "",
-        선택월: state.selectedMonth || "",
-        테마색상: state.themeColor || "",
-        내보낸일시: new Date().toISOString()
-      }
-    ]),
-    "프로필"
-  );
-  return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+  return writeWorkbookBuffer([
+    {
+      sheet: "거래내역",
+      data: objectRowsToExcelRows(transactionRows, { 날짜: "", 유형: "", 카테고리: "", 금액: "" })
+    },
+    {
+      sheet: "투자배당",
+      data: objectRowsToExcelRows(securityRows, { 티커: "", 종목명: "", 수량: "", 평단가: "" })
+    },
+    {
+      sheet: "목표",
+      data: objectRowsToExcelRows(goalRows, { 목표ID: "", 유형: "", 이름: "", 값: "" })
+    },
+    {
+      sheet: "프로필",
+      data: objectRowsToExcelRows(
+        [{
+          이름: state.profile?.name || "",
+          선택월: state.selectedMonth || "",
+          테마색상: state.themeColor || "",
+          내보낸일시: new Date().toISOString()
+        }],
+        { 이름: "", 선택월: "", 테마색상: "", 내보낸일시: "" }
+      )
+    }
+  ]);
 }
 
 function stripHtml(html) {
@@ -1964,7 +1995,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const state = (await getLedgerState(db, session.ledgerId)) || {};
-      const buffer = buildLedgerExportWorkbook(state);
+      const buffer = await buildLedgerExportWorkbook(state);
       const fileDate = new Date().toISOString().slice(0, 10);
       res.writeHead(200, securityHeaders({
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2068,7 +2099,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === "/api/transactions/sample.xlsx") {
-    const sampleBuffer = buildTransactionSampleWorkbook();
+    const sampleBuffer = await buildTransactionSampleWorkbook();
     res.writeHead(200, securityHeaders({
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": "attachment; filename=\"transaction-upload-sample.xlsx\"",

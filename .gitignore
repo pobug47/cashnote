@@ -10,3 +10,7 @@ backups/
 .DS_Store
 Thumbs.db
 npm-debug.log*
+*.jks
+*.keystore
+*.p12
+android/key.properties
