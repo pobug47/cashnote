@@ -895,6 +895,8 @@ function openNoticeModal(notices) {
   activeNoticeModalIds = notices.map((notice) => notice.id);
   const list = document.querySelector("#noticeModalList");
   if (!list) return;
+  const dismissAgain = document.querySelector("#noticeDismissAgain");
+  if (dismissAgain) dismissAgain.checked = false;
 
   list.innerHTML = notices
     .map(
@@ -914,11 +916,15 @@ function openNoticeModal(notices) {
   document.querySelector("#dismissNoticeModal")?.focus();
 }
 
-function closeNoticeModal() {
-  const dismissed = dismissedNoticeIds();
-  activeNoticeModalIds.forEach((id) => dismissed.add(id));
-  saveDismissedNoticeIds(dismissed);
+function closeNoticeModal({ remember = false } = {}) {
+  if (remember) {
+    const dismissed = dismissedNoticeIds();
+    activeNoticeModalIds.forEach((id) => dismissed.add(id));
+    saveDismissedNoticeIds(dismissed);
+  }
   activeNoticeModalIds = [];
+  const dismissAgain = document.querySelector("#noticeDismissAgain");
+  if (dismissAgain) dismissAgain.checked = false;
   document.querySelector("#noticeModal").hidden = true;
 }
 
@@ -5144,7 +5150,9 @@ document.querySelector("#confirmGoalModal").addEventListener("click", confirmPen
 document.querySelector("#goalConfirmModal").addEventListener("click", (event) => {
   if (event.target.id === "goalConfirmModal") closeGoalModal();
 });
-document.querySelector("#dismissNoticeModal").addEventListener("click", closeNoticeModal);
+document.querySelector("#dismissNoticeModal").addEventListener("click", () => {
+  closeNoticeModal({ remember: Boolean(document.querySelector("#noticeDismissAgain")?.checked) });
+});
 document.querySelector("#noticeModal").addEventListener("click", (event) => {
   if (event.target.id === "noticeModal") closeNoticeModal();
 });

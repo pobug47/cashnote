@@ -2562,6 +2562,21 @@ textarea {
   background: #fff0ef;
 }
 
+.notice-dismiss-option {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.notice-dismiss-option input {
+  width: auto;
+  accent-color: var(--green);
+}
+
 .badge {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

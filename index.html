@@ -10,7 +10,7 @@
     <title>자산 보드</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-    <link rel="stylesheet" href="./src/styles.css?v=28" />
+    <link rel="stylesheet" href="./src/styles.css?v=29" />
   </head>
   <body>
     <section id="loginScene" class="login-scene">
@@ -907,6 +907,10 @@
           <p>확인하지 않은 안내가 있습니다.</p>
         </div>
         <div id="noticeModalList" class="notice-modal-list"></div>
+        <label class="notice-dismiss-option">
+          <input id="noticeDismissAgain" type="checkbox" />
+          <span>다시 보지 않기</span>
+        </label>
         <div class="modal-actions">
           <button id="dismissNoticeModal" type="button" class="primary-button">확인했습니다</button>
         </div>
@@ -914,7 +918,7 @@
     </div>
 
     <script src="./node_modules/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="./src/app.js?v=28"></script>
-    <script src="./src/pwa.js?v=28"></script>
+    <script src="./src/app.js?v=29"></script>
+    <script src="./src/pwa.js?v=29"></script>
   </body>
 </html>
