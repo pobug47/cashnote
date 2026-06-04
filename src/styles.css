@@ -33,6 +33,7 @@ body {
   font-family: "Segoe UI", "Noto Sans KR", Arial, sans-serif;
   color: var(--ink);
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 .login-scene {
@@ -2638,6 +2639,7 @@ textarea {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow-x: hidden;
   }
 
   .bottom-ad-banner {
@@ -2647,15 +2649,72 @@ textarea {
   .sidebar {
     position: static;
     grid-row: auto;
-    gap: 16px;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .brand > div {
+    min-width: 0;
+  }
+
+  .brand strong,
+  .brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ledger-scope-switch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ledger-scope-button {
+    min-width: 0;
+    padding: 10px 12px;
   }
 
   .nav-list {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    display: flex;
+    gap: 8px;
+    margin: 0 -16px;
+    overflow-x: auto;
+    padding: 0 16px 4px;
+    scrollbar-width: none;
+  }
+
+  .nav-list::-webkit-scrollbar {
+    display: none;
   }
 
   .nav-item {
+    flex: 0 0 auto;
+    min-width: 104px;
+    padding: 10px 12px;
     text-align: center;
+    white-space: nowrap;
+  }
+
+  .storage-panel {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .storage-panel .ghost-button {
+    width: auto;
+    min-height: 40px;
   }
 
   .metric-grid,
@@ -2694,7 +2753,26 @@ textarea {
   }
 
   .content {
+    width: 100%;
+    min-width: 0;
     padding: 20px;
+  }
+
+  .app-shell,
+  .view,
+  .panel,
+  .form-panel {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  h1 {
+    font-size: 25px;
+    line-height: 1.25;
+  }
+
+  .month-control {
+    max-width: 100%;
   }
 
   .modal-backdrop {
