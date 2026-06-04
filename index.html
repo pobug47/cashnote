@@ -87,7 +87,6 @@
       <main class="content">
         <header class="topbar">
           <div>
-            <p class="eyebrow">2025년 10월 기준</p>
             <h1 id="mainTitle">민석님의 월간 자산 흐름</h1>
           </div>
           <div class="month-control" aria-label="월 선택">
@@ -728,7 +727,41 @@
         </section>
 
         <section id="adminView" class="view">
-          <div class="admin-layout">
+          <div class="admin-tabs" role="tablist" aria-label="관리자 메뉴">
+            <button class="admin-tab active" type="button" data-admin-tab="stats">통계</button>
+            <button class="admin-tab" type="button" data-admin-tab="notices">공지 관리</button>
+          </div>
+
+          <section id="adminStatsPanel" class="admin-tab-panel panel admin-stats-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>서비스 이용 통계</h2>
+                <span>회원가입 수와 로그인 흐름을 확인합니다.</span>
+              </div>
+              <span id="adminStatsStatus">불러오는 중</span>
+            </div>
+            <div id="adminStatsSummary" class="admin-stat-grid"></div>
+            <div class="admin-chart-wrap">
+              <div class="panel-heading">
+                <div>
+                  <h2>최근 14일 추이</h2>
+                  <span>일별 가입과 로그인 횟수입니다.</span>
+                </div>
+              </div>
+              <div id="adminDailyChart" class="admin-daily-chart"></div>
+            </div>
+            <div class="admin-recent-users">
+              <div class="panel-heading">
+                <div>
+                  <h2>최근 가입자</h2>
+                  <span>가장 최근 가입한 계정입니다.</span>
+                </div>
+              </div>
+              <div id="adminRecentUsers" class="admin-user-list"></div>
+            </div>
+          </section>
+
+          <div id="adminNoticesPanel" class="admin-tab-panel admin-layout" hidden>
             <form id="noticeForm" class="panel admin-notice-form">
               <div class="panel-heading">
                 <div>

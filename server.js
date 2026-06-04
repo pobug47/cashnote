@@ -290,6 +290,15 @@ async function getDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS admin_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        email TEXT,
+        ledger_id TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT;
       ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_by TEXT;
       ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
@@ -302,6 +311,8 @@ async function getDb() {
       CREATE INDEX IF NOT EXISTS idx_support_tickets_ledger_id ON support_tickets(ledger_id);
       CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
       CREATE INDEX IF NOT EXISTS idx_support_tickets_created_at ON support_tickets(created_at);
+      CREATE INDEX IF NOT EXISTS idx_admin_events_type_created_at ON admin_events(event_type, created_at);
+      CREATE INDEX IF NOT EXISTS idx_admin_events_email ON admin_events(email);
     `).then(() => pool).catch((error) => {
       dbReadyPromise = null;
       throw error;
@@ -783,6 +794,27 @@ async function createSession(db, account) {
   return token;
 }
 
+async function recordAdminEvent(db, req, { eventType, email, ledgerId }) {
+  try {
+    await db.query(
+      `
+        INSERT INTO admin_events (id, event_type, email, ledger_id, ip_address, user_agent, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `,
+      [
+        createId("event"),
+        eventType,
+        normalizeEmail(email) || null,
+        ledgerId || null,
+        clientIp(req),
+        String(req.headers["user-agent"] || "").slice(0, 500)
+      ]
+    );
+  } catch (error) {
+    console.warn("Admin event logging failed", error.message);
+  }
+}
+
 function sessionTokenFrom(req) {
   const authorization = String(req.headers.authorization || "");
   if (authorization.toLowerCase().startsWith("bearer ")) return authorization.slice(7).trim();
@@ -1192,6 +1224,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       let account = await getAccount(db, email);
+      const isNewAccount = !account;
       if (account && !verifyPassword(password, account.password)) {
         sendJson(res, 401, { error: "이메일 또는 비밀번호가 맞지 않습니다." });
         return;
@@ -1243,6 +1276,10 @@ const server = http.createServer(async (req, res) => {
       }
       state = { ...state, auth: { email } };
       await saveLedgerState(db, ledgerId, state);
+      if (isNewAccount) {
+        await recordAdminEvent(db, req, { eventType: "signup", email, ledgerId });
+      }
+      await recordAdminEvent(db, req, { eventType: "login", email, ledgerId });
       sendJson(res, 200, {
         account: publicAccount({ ...account, ledgerId, memberName: invite?.memberName || state.authorByEmail?.[email] || "" }),
         ledgerId,
@@ -1502,6 +1539,85 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { tickets: mergeSupportTickets(result.rows, legacyTickets) });
     } catch (error) {
       sendJson(res, 500, { error: "관리자 문의 목록을 불러오지 못했습니다.", detail: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/admin/stats" && req.method === "GET") {
+    try {
+      const db = await getDb();
+      const session = await getSession(db, req);
+      if (!requireAdminSession(session, res)) return;
+
+      const summaryResult = await db.query(`
+        SELECT
+          (SELECT COUNT(*)::int FROM accounts) AS "totalUsers",
+          (SELECT COUNT(*)::int FROM ledgers) AS "totalLedgers",
+          (SELECT COUNT(*)::int FROM sessions WHERE expires_at > NOW()) AS "activeSessions",
+          (
+            SELECT COUNT(*)::int
+            FROM accounts
+            WHERE (created_at AT TIME ZONE 'Asia/Seoul')::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date
+          ) AS "todaySignups",
+          (
+            SELECT COUNT(*)::int
+            FROM admin_events
+            WHERE event_type = 'login'
+              AND (created_at AT TIME ZONE 'Asia/Seoul')::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date
+          ) AS "todayLogins",
+          (
+            SELECT COUNT(DISTINCT email)::int
+            FROM admin_events
+            WHERE event_type = 'login'
+              AND (created_at AT TIME ZONE 'Asia/Seoul')::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date
+          ) AS "todayUniqueLogins"
+      `);
+      const dailyResult = await db.query(`
+        WITH days AS (
+          SELECT generate_series(
+            (NOW() AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '13 days',
+            (NOW() AT TIME ZONE 'Asia/Seoul')::date,
+            INTERVAL '1 day'
+          )::date AS day
+        ),
+        signup_counts AS (
+          SELECT (created_at AT TIME ZONE 'Asia/Seoul')::date AS day, COUNT(*)::int AS count
+          FROM accounts
+          GROUP BY 1
+        ),
+        login_counts AS (
+          SELECT
+            (created_at AT TIME ZONE 'Asia/Seoul')::date AS day,
+            COUNT(*)::int AS count,
+            COUNT(DISTINCT email)::int AS unique_count
+          FROM admin_events
+          WHERE event_type = 'login'
+          GROUP BY 1
+        )
+        SELECT
+          TO_CHAR(days.day, 'YYYY-MM-DD') AS date,
+          COALESCE(signup_counts.count, 0)::int AS signups,
+          COALESCE(login_counts.count, 0)::int AS logins,
+          COALESCE(login_counts.unique_count, 0)::int AS "uniqueLogins"
+        FROM days
+        LEFT JOIN signup_counts ON signup_counts.day = days.day
+        LEFT JOIN login_counts ON login_counts.day = days.day
+        ORDER BY days.day
+      `);
+      const recentUsersResult = await db.query(`
+        SELECT email, ledger_id AS "ledgerId", created_at AS "createdAt"
+        FROM accounts
+        ORDER BY created_at DESC
+        LIMIT 8
+      `);
+
+      sendJson(res, 200, {
+        summary: summaryResult.rows[0] || {},
+        daily: dailyResult.rows,
+        recentUsers: recentUsersResult.rows
+      });
+    } catch (error) {
+      sendJson(res, 500, { error: "관리자 통계를 불러오지 못했습니다.", detail: error.message });
     }
     return;
   }

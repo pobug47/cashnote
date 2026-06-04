@@ -114,6 +114,9 @@ let currentAccountIsAdmin = false;
 let editingNoticeId = null;
 let adminNotices = [];
 let adminNoticeRefreshPromise = null;
+let adminStats = null;
+let adminStatsRefreshPromise = null;
+let adminActiveTab = "stats";
 let supportTickets = [];
 let supportRefreshPromise = null;
 let editingSupportTicketId = null;
@@ -1018,6 +1021,136 @@ async function fetchAdminNotices({ force = false } = {}) {
   return adminNoticeRefreshPromise;
 }
 
+function countLabel(value, unit = "건") {
+  return `${Number(value || 0).toLocaleString("ko-KR")}${unit}`;
+}
+
+function renderAdminTabs() {
+  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.adminTab === adminActiveTab);
+  });
+  document.querySelector("#adminStatsPanel").hidden = adminActiveTab !== "stats";
+  document.querySelector("#adminNoticesPanel").hidden = adminActiveTab !== "notices";
+}
+
+function renderAdminStats() {
+  const summaryContainer = document.querySelector("#adminStatsSummary");
+  const chartContainer = document.querySelector("#adminDailyChart");
+  const recentContainer = document.querySelector("#adminRecentUsers");
+  const status = document.querySelector("#adminStatsStatus");
+  if (!summaryContainer || !chartContainer || !recentContainer) return;
+
+  if (!adminStats) {
+    summaryContainer.innerHTML = `
+      <article class="admin-stat-card"><span>총 회원</span><strong>-</strong></article>
+      <article class="admin-stat-card"><span>오늘 로그인</span><strong>-</strong></article>
+      <article class="admin-stat-card"><span>오늘 가입</span><strong>-</strong></article>
+      <article class="admin-stat-card"><span>활성 세션</span><strong>-</strong></article>
+    `;
+    chartContainer.innerHTML = `<div class="history-empty">통계를 불러오는 중입니다.</div>`;
+    recentContainer.innerHTML = `<div class="history-empty">최근 가입자를 불러오는 중입니다.</div>`;
+    if (status) status.textContent = "불러오는 중";
+    return;
+  }
+
+  const summary = adminStats.summary || {};
+  const daily = adminStats.daily || [];
+  const recentUsers = adminStats.recentUsers || [];
+  const maxValue = Math.max(...daily.flatMap((item) => [Number(item.signups || 0), Number(item.logins || 0)]), 1);
+
+  summaryContainer.innerHTML = `
+    <article class="admin-stat-card">
+      <span>총 회원</span>
+      <strong>${countLabel(summary.totalUsers, "명")}</strong>
+      <small>가입된 전체 계정</small>
+    </article>
+    <article class="admin-stat-card">
+      <span>오늘 로그인</span>
+      <strong>${countLabel(summary.todayLogins, "회")}</strong>
+      <small>순 방문 ${countLabel(summary.todayUniqueLogins, "명")}</small>
+    </article>
+    <article class="admin-stat-card">
+      <span>오늘 가입</span>
+      <strong>${countLabel(summary.todaySignups, "명")}</strong>
+      <small>오늘 생성된 계정</small>
+    </article>
+    <article class="admin-stat-card">
+      <span>활성 세션</span>
+      <strong>${countLabel(summary.activeSessions, "개")}</strong>
+      <small>만료되지 않은 로그인</small>
+    </article>
+  `;
+
+  chartContainer.innerHTML = daily.length
+    ? `
+      <div class="admin-chart-legend">
+        <span><i class="signup"></i>회원가입</span>
+        <span><i class="login"></i>로그인</span>
+      </div>
+      <div class="admin-chart-grid">
+        ${daily
+          .map((item) => {
+            const signupHeight = Math.max(4, (Number(item.signups || 0) / maxValue) * 100);
+            const loginHeight = Math.max(4, (Number(item.logins || 0) / maxValue) * 100);
+            const dateLabel = String(item.date || "").slice(5).replace("-", "/");
+            return `
+              <div class="admin-chart-day" title="${escapeHtml(item.date)} 가입 ${item.signups}건, 로그인 ${item.logins}건">
+                <div class="admin-chart-bars">
+                  <span class="signup" style="height:${signupHeight}%"></span>
+                  <span class="login" style="height:${loginHeight}%"></span>
+                </div>
+                <strong>${escapeHtml(dateLabel)}</strong>
+                <small>${Number(item.logins || 0).toLocaleString("ko-KR")}</small>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `
+    : `<div class="history-empty">아직 표시할 통계가 없습니다.</div>`;
+
+  recentContainer.innerHTML = recentUsers.length
+    ? recentUsers
+        .map(
+          (user) => `
+            <article class="admin-user-item">
+              <div>
+                <strong>${escapeHtml(displayEmail(user.email))}</strong>
+                <small>${escapeHtml(user.ledgerId || "-")}</small>
+              </div>
+              <span>${escapeHtml(formatNoticeDate(user.createdAt) || "-")}</span>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="history-empty">가입자가 아직 없습니다.</div>`;
+
+  if (status) status.textContent = "최신";
+}
+
+async function fetchAdminStats({ force = false } = {}) {
+  if (!currentAccountIsAdmin) return;
+  if (adminStatsRefreshPromise && !force) return adminStatsRefreshPromise;
+
+  const status = document.querySelector("#adminStatsStatus");
+  if (status) status.textContent = "불러오는 중";
+  adminStatsRefreshPromise = apiRequest("/api/admin/stats")
+    .then((result) => {
+      adminStats = result;
+      renderAdminStats();
+      return adminStats;
+    })
+    .catch((error) => {
+      if (status) status.textContent = "실패";
+      document.querySelector("#adminDailyChart").innerHTML = `<div class="history-empty">${escapeHtml(error.message)}</div>`;
+      return null;
+    })
+    .finally(() => {
+      adminStatsRefreshPromise = null;
+    });
+  return adminStatsRefreshPromise;
+}
+
 function startNoticeEdit(id) {
   const notice = adminNotices.find((item) => item.id === id);
   const form = document.querySelector("#noticeForm");
@@ -1039,6 +1172,8 @@ function startNoticeEdit(id) {
 function renderAdmin() {
   renderAdminAccess();
   if (!currentAccountIsAdmin) return;
+  renderAdminTabs();
+  renderAdminStats();
   renderAdminNotices();
 }
 
@@ -1046,7 +1181,6 @@ function renderProfile() {
   const rawName = typeof state.profile?.name === "string" ? state.profile.name : "민석";
   const name = rawName.trim() || "사용자";
   const image = state.profile?.image || "";
-  const title = document.querySelector("#mainTitle");
   const nameInput = document.querySelector("#profileNameInput");
   const imagePreview = document.querySelector("#profileImagePreview");
   const imageInitial = document.querySelector("#profileImageInitial");
@@ -1054,7 +1188,7 @@ function renderProfile() {
   const settingsImageInitial = document.querySelector("#settingsProfileImageInitial");
   const savingsInsightText = document.querySelector("#savingsInsightText");
 
-  if (title) title.textContent = `${name}님의 ${scopeLabel()} 흐름`;
+  renderPageHeader();
   if (savingsInsightText) savingsInsightText.textContent = `${name}님은 지금까지 이만큼 저축/투자했어요.`;
   if (nameInput && document.activeElement !== nameInput && nameInput.value !== rawName) {
     nameInput.value = rawName;
@@ -1151,6 +1285,29 @@ function prefillInviteCodeFromUrl() {
 
 function validatePasswordValue(password) {
   return String(password || "").length >= 8;
+}
+
+function pageTitleForView(view, name) {
+  const titles = {
+    dashboard: `${name}님의 ${scopeLabel()} 흐름`,
+    transactions: `${scopeLabel()} 거래 내역`,
+    budgets: `${scopeLabel()} 예산 설정`,
+    investments: "투자/배당 관리",
+    insights: "기록 회고",
+    support: "고객센터",
+    settings: "시스템 설정",
+    admin: "관리자 페이지"
+  };
+  return titles[view] || titles.dashboard;
+}
+
+function renderPageHeader() {
+  const title = document.querySelector("#mainTitle");
+  if (!title) return;
+
+  const rawName = typeof state.profile?.name === "string" ? state.profile.name : "민석";
+  const name = rawName.trim() || "사용자";
+  title.textContent = pageTitleForView(currentView(), name);
 }
 
 function showAppScene() {
@@ -1290,6 +1447,7 @@ async function resumeSession() {
     currentLedgerId = null;
     currentSessionToken = "";
     currentAccountIsAdmin = false;
+    adminStats = null;
     showLoginScene(`로그인 정보를 불러오지 못했습니다. 다시 로그인해 주세요. ${error.message}`, "error");
   }
 }
@@ -1343,6 +1501,7 @@ function initProfileControls() {
     currentSessionToken = "";
     currentAccountIsAdmin = false;
     adminNotices = [];
+    adminStats = null;
     editingNoticeId = null;
     supportTickets = [];
     editingSupportTicketId = null;
@@ -1487,6 +1646,7 @@ function initAccountControls() {
       currentLedgerId = null;
       currentSessionToken = "";
       currentAccountIsAdmin = false;
+      adminStats = null;
       supportTickets = [];
       editingSupportTicketId = null;
       state = structuredClone(sampleData);
@@ -1616,6 +1776,15 @@ function initAdminControls() {
   const cancelButton = document.querySelector("#cancelNoticeEdit");
   const list = document.querySelector("#noticeList");
   if (!form || !list) return;
+
+  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      adminActiveTab = button.dataset.adminTab || "stats";
+      renderAdminTabs();
+      if (adminActiveTab === "stats") fetchAdminStats({ force: true });
+      if (adminActiveTab === "notices") fetchAdminNotices({ force: true });
+    });
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -4633,7 +4802,11 @@ function setView(view, options = {}) {
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active-view"));
   document.querySelector(`#${view}View`).classList.add("active-view");
-  if (view === "admin") fetchAdminNotices();
+  renderPageHeader();
+  if (view === "admin") {
+    if (adminActiveTab === "stats") fetchAdminStats();
+    if (adminActiveTab === "notices") fetchAdminNotices();
+  }
   if (view === "support") fetchSupportTickets({ force: true });
   if (options.updateHistory !== false) {
     writeNavigationHistory(view, { replace: options.replaceHistory || previousView === view });
