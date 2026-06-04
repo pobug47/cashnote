@@ -20,6 +20,7 @@ const maxSupportAttachmentBytes = 2 * 1024 * 1024;
 const noticeSeverities = ["info", "warning", "maintenance"];
 const supportStatuses = ["received", "processing", "done"];
 const emailDeliveryUnavailableMessage = "이메일 인증 발송이 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.";
+const emailDeliveryFailedMessage = "메일을 발송하지 못했습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.";
 let dbReadyPromise = null;
 const rateLimits = new Map();
 const pool = new Pool({
@@ -497,6 +498,16 @@ function smtpTransport() {
   });
 }
 
+function publicEmailError(message) {
+  const error = new Error(message);
+  error.publicMessage = message;
+  return error;
+}
+
+function emailErrorMessage(error, fallback = emailDeliveryFailedMessage) {
+  return error?.publicMessage || fallback;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -602,22 +613,27 @@ function renderAdPreviewPage(req) {
 
 async function sendVerificationEmail(email, code, purpose) {
   if (!smtpConfigured()) {
-    throw new Error(emailDeliveryUnavailableMessage);
+    throw publicEmailError(emailDeliveryUnavailableMessage);
   }
 
   const title = purpose === "reset" ? "비밀번호 재설정 인증번호" : purpose === "change-email" ? "이메일 변경 인증번호" : "회원가입 인증번호";
-  await smtpTransport().sendMail({
-    from: process.env.SMTP_FROM,
-    to: email,
-    subject: `[Cashnote] ${title}`,
-    text: `Cashnote ${title}는 ${code} 입니다. 10분 안에 입력해 주세요.`,
-    html: `<p>Cashnote ${title}는 <strong>${code}</strong> 입니다.</p><p>10분 안에 입력해 주세요.</p>`
-  });
+  try {
+    await smtpTransport().sendMail({
+      from: process.env.SMTP_FROM,
+      to: email,
+      subject: `[Cashnote] ${title}`,
+      text: `Cashnote ${title}는 ${code} 입니다. 10분 안에 입력해 주세요.`,
+      html: `<p>Cashnote ${title}는 <strong>${code}</strong> 입니다.</p><p>10분 안에 입력해 주세요.</p>`
+    });
+  } catch (error) {
+    console.error("verification email delivery failed", error);
+    throw publicEmailError(emailDeliveryFailedMessage);
+  }
 }
 
 async function sendInviteEmail(email, { code, inviteLink, inviter, memberName }) {
   if (!smtpConfigured()) {
-    throw new Error(emailDeliveryUnavailableMessage);
+    throw publicEmailError(emailDeliveryUnavailableMessage);
   }
 
   const inviterName = String(inviter || "Cashnote 사용자").trim();
@@ -632,18 +648,23 @@ async function sendInviteEmail(email, { code, inviteLink, inviter, memberName })
     "링크로 접속하거나 로그인 화면에서 초대 코드를 입력하면 같은 가계부에 참여할 수 있습니다."
   ].filter(Boolean).join("\n");
 
-  await smtpTransport().sendMail({
-    from: process.env.SMTP_FROM,
-    to: email,
-    subject: "[Cashnote] 가계부 초대가 도착했습니다",
-    text,
-    html: `
-      <p>${escapeHtml(inviterName)}님이 Cashnote 가계부에 ${escapeHtml(targetText)} 초대했습니다.</p>
-      <p><strong>초대 코드: ${escapeHtml(code)}</strong></p>
-      ${inviteLink ? `<p><a href="${escapeHtml(inviteLink)}">초대 링크로 열기</a></p>` : ""}
-      <p>링크로 접속하거나 로그인 화면에서 초대 코드를 입력하면 같은 가계부에 참여할 수 있습니다.</p>
-    `
-  });
+  try {
+    await smtpTransport().sendMail({
+      from: process.env.SMTP_FROM,
+      to: email,
+      subject: "[Cashnote] 가계부 초대가 도착했습니다",
+      text,
+      html: `
+        <p>${escapeHtml(inviterName)}님이 Cashnote 가계부에 ${escapeHtml(targetText)} 초대했습니다.</p>
+        <p><strong>초대 코드: ${escapeHtml(code)}</strong></p>
+        ${inviteLink ? `<p><a href="${escapeHtml(inviteLink)}">초대 링크로 열기</a></p>` : ""}
+        <p>링크로 접속하거나 로그인 화면에서 초대 코드를 입력하면 같은 가계부에 참여할 수 있습니다.</p>
+      `
+    });
+  } catch (error) {
+    console.error("invite email delivery failed", error);
+    throw publicEmailError(emailDeliveryFailedMessage);
+  }
 }
 
 async function createEmailVerification(db, email, purpose) {
@@ -657,7 +678,7 @@ async function createEmailVerification(db, email, purpose) {
   );
   const createdAt = existing.rows[0]?.createdAt ? new Date(existing.rows[0].createdAt).getTime() : 0;
   if (createdAt && Date.now() - createdAt < verificationCooldownMs) {
-    throw new Error("인증번호는 1분에 한 번만 다시 받을 수 있습니다. 잠시 후 다시 시도해 주세요.");
+    throw publicEmailError("인증번호는 1분에 한 번만 다시 받을 수 있습니다. 잠시 후 다시 시도해 주세요.");
   }
 
   const code = createVerificationCode();
@@ -1092,7 +1113,7 @@ const server = http.createServer(async (req, res) => {
       await createEmailVerification(db, email, purpose);
       sendJson(res, 200, { ok: true, expiresInMinutes: 10 });
     } catch (error) {
-      sendJson(res, smtpConfigured() ? 500 : 503, { error: error.message || "인증번호를 발송하지 못했습니다." });
+      sendJson(res, smtpConfigured() ? 500 : 503, { error: emailErrorMessage(error) });
     }
     return;
   }
@@ -1875,7 +1896,7 @@ const server = http.createServer(async (req, res) => {
       }
       sendJson(res, 200, { code, ledgerId: session.ledgerId, inviteLink, emailSent: Boolean(invitedEmail) });
     } catch (error) {
-      sendJson(res, smtpConfigured() ? 500 : 503, { error: smtpConfigured() ? "초대 메일을 보내지 못했습니다." : emailDeliveryUnavailableMessage });
+      sendJson(res, smtpConfigured() ? 500 : 503, { error: emailErrorMessage(error, "초대 메일을 보내지 못했습니다.") });
     }
     return;
   }
