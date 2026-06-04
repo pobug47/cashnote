@@ -832,6 +832,37 @@
           <span class="ad-action">스폰서</span>
         </div>
       </aside>
+
+      <div id="helpGuide" class="help-guide" aria-live="polite">
+        <section id="helpGuidePanel" class="help-guide-panel" role="dialog" aria-modal="false" aria-labelledby="helpGuideTitle" hidden>
+          <div class="help-guide-heading">
+            <div>
+              <span>도움말</span>
+              <h2 id="helpGuideTitle">어떤 항목을 설명해 드릴까요?</h2>
+            </div>
+            <button id="closeHelpGuide" type="button" class="icon-button" aria-label="도움말 닫기">×</button>
+          </div>
+          <p id="helpGuideIntro" class="help-guide-intro"></p>
+          <div id="helpTopicList" class="help-topic-list"></div>
+          <article id="helpTopicDetail" class="help-topic-detail" hidden>
+            <button id="backToHelpTopics" type="button" class="text-button">다른 기능 보기</button>
+            <h3 id="helpTopicTitle"></h3>
+            <p id="helpTopicDescription"></p>
+            <ul id="helpTopicTips"></ul>
+            <div class="help-topic-actions">
+              <button id="goHelpTopic" type="button" class="primary-button">해당 화면으로 이동</button>
+              <button id="askSupportFromHelp" type="button" class="secondary-button">고객센터에 문의</button>
+            </div>
+          </article>
+        </section>
+        <button id="openHelpGuide" type="button" class="help-guide-button" aria-expanded="false" aria-controls="helpGuidePanel">
+          <span class="help-character" aria-hidden="true">
+            <i></i>
+            <b></b>
+          </span>
+          <span>도움</span>
+        </button>
+      </div>
     </div>
 
     <div id="goalConfirmModal" class="modal-backdrop" hidden>

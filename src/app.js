@@ -123,6 +123,7 @@ let editingSupportTicketId = null;
 let activeNoticeModalIds = [];
 let budgetBoardTab = "expense";
 let transactionDatePickerMonth = null;
+let selectedHelpTopicId = null;
 const verificationCountdowns = new Map();
 const dividendDataCache = new Map();
 const dividendFetches = new Set();
@@ -1287,6 +1288,254 @@ function validatePasswordValue(password) {
   return String(password || "").length >= 8;
 }
 
+const helpTopics = [
+  {
+    id: "dashboard",
+    title: "월 요약",
+    view: "dashboard",
+    recommendedViews: ["dashboard"],
+    description: "이번 달 수입, 지출, 저축/투자, 가용 잔액을 한눈에 보는 첫 화면입니다.",
+    tips: [
+      "상단 금액 카드를 누르면 해당 유형의 거래 내역으로 이동합니다.",
+      "최근 거래나 월 요약 보드의 항목을 누르면 관련 목록을 바로 확인할 수 있습니다."
+    ]
+  },
+  {
+    id: "transaction-form",
+    title: "거래 추가",
+    view: "transactions",
+    recommendedViews: ["transactions"],
+    description: "수입, 지출, 저축/투자 내역을 날짜와 금액, 결제수단, 예산 항목과 함께 등록하는 기능입니다.",
+    tips: [
+      "공동 가계부 작성자가 2명 이상이면 작성자가 자동 표시됩니다.",
+      "지출 거래는 예산 항목을 선택해서 예산 사용량에 반영할 수 있습니다."
+    ]
+  },
+  {
+    id: "transactions",
+    title: "월 거래 내역",
+    view: "transactions",
+    recommendedViews: ["dashboard", "transactions"],
+    description: "선택한 월의 거래를 전체, 유형, 카테고리별로 확인하는 화면입니다.",
+    tips: [
+      "목록에서 거래를 선택하면 하단 상세 목록에 해당 거래들이 정리됩니다.",
+      "본인이 작성한 거래만 수정할 수 있도록 구분됩니다."
+    ]
+  },
+  {
+    id: "calendar",
+    title: "달력 보기",
+    view: "transactions",
+    mode: "calendar",
+    recommendedViews: ["transactions"],
+    description: "월별 수입과 지출을 날짜별로 확인하고, 특정 날짜의 거래만 따로 보는 기능입니다.",
+    tips: [
+      "거래 내역 화면의 달력 탭에서 볼 수 있습니다.",
+      "날짜를 누르면 그날 등록된 거래 내역이 아래에 표시됩니다."
+    ]
+  },
+  {
+    id: "excel",
+    title: "엑셀 일괄 등록",
+    view: "transactions",
+    recommendedViews: ["transactions"],
+    description: "샘플 양식에 맞춘 엑셀 파일을 업로드해서 여러 거래를 한 번에 등록하는 기능입니다.",
+    tips: [
+      "날짜, 유형, 카테고리, 금액은 필수입니다.",
+      "기존 거래와 중복될 수 있으니 수정은 화면에서 수동으로 처리하는 것을 권장합니다."
+    ]
+  },
+  {
+    id: "budgets",
+    title: "예산 설정",
+    view: "budgets",
+    recommendedViews: ["dashboard", "budgets"],
+    description: "카테고리별 예산을 만들고 실제 사용 금액과 비교하는 기능입니다.",
+    tips: [
+      "공동 가계부가 활성화되면 공동 예산과 개인 예산을 구분할 수 있습니다.",
+      "거래 등록 시 예산 항목을 연결하면 사용 금액 그래프에 반영됩니다."
+    ]
+  },
+  {
+    id: "investments",
+    title: "투자/배당",
+    view: "investments",
+    recommendedViews: ["dashboard", "investments"],
+    description: "보유 종목, 평단가, 원금, 예상 배당과 배당 회수율을 관리하는 기능입니다.",
+    tips: [
+      "종목을 추가하면 배당 상세와 회수율 정보를 확인할 수 있습니다.",
+      "배당 발표일, 배당락일, 지급일 같은 배당 일정도 함께 관리합니다."
+    ]
+  },
+  {
+    id: "insights",
+    title: "기록 회고",
+    view: "insights",
+    recommendedViews: ["insights"],
+    description: "등록된 가계부 데이터를 바탕으로 소비 흐름, 위험 신호, 추천 목표를 보여주는 화면입니다.",
+    tips: [
+      "추천 목표를 선택하면 다음 달 목표로 적용할 수 있습니다.",
+      "지출 진단과 위험 신호를 통해 관리가 필요한 항목을 먼저 확인할 수 있습니다."
+    ]
+  },
+  {
+    id: "support",
+    title: "고객센터",
+    view: "support",
+    recommendedViews: ["support"],
+    description: "서비스 이용 중 불편한 점이나 확인이 필요한 내용을 문의로 남기는 화면입니다.",
+    tips: [
+      "화면 캡처를 첨부하면 문제 확인이 더 쉬워집니다.",
+      "관리자 답변과 처리 상태를 문의 목록에서 확인할 수 있습니다."
+    ]
+  },
+  {
+    id: "settings",
+    title: "시스템 설정",
+    view: "settings",
+    recommendedViews: ["settings"],
+    description: "프로필, 테마, 작성자, 초대, 계정 설정을 관리하는 화면입니다.",
+    tips: [
+      "이름과 프로필 이미지를 변경할 수 있습니다.",
+      "가족이나 함께 쓰는 사람이 있으면 작성자 초대를 보낼 수 있습니다."
+    ]
+  },
+  {
+    id: "household",
+    title: "공동 가계부/작성자",
+    view: "settings",
+    recommendedViews: ["settings"],
+    description: "혼자 쓰는 가계부와 함께 쓰는 가계부를 구분하고 작성자를 관리하는 기능입니다.",
+    tips: [
+      "추가 작성자가 없으면 작성자 구분은 숨겨집니다.",
+      "초대받은 사용자가 가입하면 공동 가계부에 연결됩니다."
+    ]
+  },
+  {
+    id: "admin",
+    title: "관리자 기능",
+    view: "admin",
+    adminOnly: true,
+    recommendedViews: ["admin"],
+    description: "공지사항, 고객 문의, 가입자와 로그인 통계를 관리자가 확인하는 화면입니다.",
+    tips: [
+      "통계 탭에서 회원가입 수와 일별 로그인 횟수를 확인할 수 있습니다.",
+      "공지 관리에서 로그인 시 사용자에게 보여줄 안내를 등록할 수 있습니다."
+    ]
+  }
+];
+
+function visibleHelpTopics() {
+  return helpTopics.filter((topic) => !topic.adminOnly || currentAccountIsAdmin);
+}
+
+function recommendedHelpTopics(view = currentView()) {
+  const topics = visibleHelpTopics();
+  const recommended = topics.filter((topic) => topic.recommendedViews.includes(view));
+  return recommended.length ? recommended : topics.slice(0, 3);
+}
+
+function helpTopicById(id) {
+  return visibleHelpTopics().find((topic) => topic.id === id) || visibleHelpTopics()[0] || null;
+}
+
+function renderHelpGuide() {
+  const panel = document.querySelector("#helpGuidePanel");
+  const list = document.querySelector("#helpTopicList");
+  const detail = document.querySelector("#helpTopicDetail");
+  const intro = document.querySelector("#helpGuideIntro");
+  if (!panel || !list || !detail || !intro) return;
+
+  const topics = visibleHelpTopics();
+  const recommended = new Set(recommendedHelpTopics().map((topic) => topic.id));
+  const selectedTopic = selectedHelpTopicId ? helpTopicById(selectedHelpTopicId) : null;
+
+  intro.textContent = selectedTopic
+    ? "아래 설명을 확인하고 필요한 화면으로 바로 이동할 수 있어요."
+    : "현재 화면에서 자주 쓰는 기능을 먼저 보여드릴게요.";
+  list.hidden = Boolean(selectedTopic);
+  detail.hidden = !selectedTopic;
+
+  list.innerHTML = topics
+    .map((topic) => `
+      <button class="help-topic-button ${recommended.has(topic.id) ? "recommended" : ""}" type="button" data-help-topic="${escapeHtml(topic.id)}">
+        <span>${escapeHtml(topic.title)}</span>
+        <small>${recommended.has(topic.id) ? "현재 화면 추천" : "기능 설명"}</small>
+      </button>
+    `)
+    .join("");
+
+  if (!selectedTopic) return;
+
+  document.querySelector("#helpTopicTitle").textContent = selectedTopic.title;
+  document.querySelector("#helpTopicDescription").textContent = selectedTopic.description;
+  document.querySelector("#helpTopicTips").innerHTML = selectedTopic.tips.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("");
+  document.querySelector("#goHelpTopic").textContent = selectedTopic.mode === "calendar" ? "달력 화면으로 이동" : "해당 화면으로 이동";
+}
+
+function setHelpGuideOpen(open) {
+  const panel = document.querySelector("#helpGuidePanel");
+  const button = document.querySelector("#openHelpGuide");
+  if (!panel || !button) return;
+
+  panel.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (open) {
+    selectedHelpTopicId = null;
+    renderHelpGuide();
+  }
+}
+
+function goToHelpTopic(topic) {
+  if (!topic) return;
+  if (topic.mode === "calendar") {
+    state.transactionViewMode = "calendar";
+    state.selectedTransactionId = null;
+    persist();
+  } else if (topic.view === "transactions") {
+    state.transactionViewMode = "list";
+    state.selectedTransactionId = null;
+    persist();
+  }
+
+  render();
+  setView(topic.view);
+  setHelpGuideOpen(false);
+}
+
+function initHelpGuideControls() {
+  const guide = document.querySelector("#helpGuide");
+  if (!guide) return;
+
+  document.querySelector("#openHelpGuide")?.addEventListener("click", () => {
+    const panel = document.querySelector("#helpGuidePanel");
+    setHelpGuideOpen(panel?.hidden ?? true);
+  });
+
+  document.querySelector("#closeHelpGuide")?.addEventListener("click", () => setHelpGuideOpen(false));
+  document.querySelector("#backToHelpTopics")?.addEventListener("click", () => {
+    selectedHelpTopicId = null;
+    renderHelpGuide();
+  });
+  document.querySelector("#goHelpTopic")?.addEventListener("click", () => goToHelpTopic(helpTopicById(selectedHelpTopicId)));
+  document.querySelector("#askSupportFromHelp")?.addEventListener("click", () => {
+    selectedHelpTopicId = null;
+    setHelpGuideOpen(false);
+    setView("support");
+  });
+
+  guide.addEventListener("click", (event) => {
+    const topicButton = event.target.closest("[data-help-topic]");
+    if (!topicButton) return;
+    selectedHelpTopicId = topicButton.dataset.helpTopic;
+    renderHelpGuide();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setHelpGuideOpen(false);
+  });
+}
+
 function pageTitleForView(view, name) {
   const titles = {
     dashboard: `${name}님의 ${scopeLabel()} 흐름`,
@@ -1332,6 +1581,7 @@ function startApp() {
   initProfileControls();
   initAccountControls();
   initAdminControls();
+  initHelpGuideControls();
   initAds();
   render();
   persist();
@@ -4803,6 +5053,7 @@ function setView(view, options = {}) {
   document.querySelectorAll(".view").forEach((item) => item.classList.remove("active-view"));
   document.querySelector(`#${view}View`).classList.add("active-view");
   renderPageHeader();
+  if (!document.querySelector("#helpGuidePanel")?.hidden) renderHelpGuide();
   if (view === "admin") {
     if (adminActiveTab === "stats") fetchAdminStats();
     if (adminActiveTab === "notices") fetchAdminNotices();

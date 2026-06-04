@@ -428,6 +428,231 @@ button {
   font-weight: 900;
 }
 
+.help-guide {
+  position: fixed;
+  right: 24px;
+  bottom: calc(var(--ad-banner-height) + 22px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.help-guide-panel {
+  display: grid;
+  width: min(390px, calc(100vw - 36px));
+  max-height: min(620px, calc(100vh - var(--ad-banner-height) - 72px));
+  overflow: auto;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(var(--theme-rgb), 0.22);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(var(--theme-dark-rgb), 0.18);
+  pointer-events: auto;
+}
+
+.help-guide-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.help-guide-heading span {
+  display: block;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.help-guide-heading h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface-muted);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.help-guide-intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.help-topic-list {
+  display: grid;
+  gap: 8px;
+}
+
+.help-topic-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: left;
+  background: #fff;
+}
+
+.help-topic-button:hover,
+.help-topic-button.recommended {
+  border-color: rgba(var(--theme-rgb), 0.55);
+  background: rgba(var(--theme-rgb), 0.07);
+}
+
+.help-topic-button span {
+  overflow: hidden;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.help-topic-button small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.help-topic-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.help-topic-detail .text-button {
+  justify-self: flex-start;
+  padding: 0;
+}
+
+.help-topic-detail h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.help-topic-detail p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.help-topic-detail ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px 12px 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface-muted);
+  line-height: 1.45;
+}
+
+.help-topic-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.help-topic-actions button {
+  min-height: 44px;
+}
+
+.help-guide-button {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 8px 13px 8px 8px;
+  border: 1px solid rgba(var(--theme-rgb), 0.28);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--theme-dark);
+  box-shadow: 0 16px 34px rgba(var(--theme-dark-rgb), 0.22);
+  font-weight: 900;
+  pointer-events: auto;
+}
+
+.help-guide-button:hover,
+.help-guide-button[aria-expanded="true"] {
+  background: var(--green);
+  transform: translateY(-1px);
+}
+
+.help-character {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--theme-accent);
+}
+
+.help-character::before,
+.help-character::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--theme-dark);
+}
+
+.help-character::before {
+  left: 12px;
+}
+
+.help-character::after {
+  right: 12px;
+}
+
+.help-character i {
+  position: absolute;
+  bottom: 11px;
+  width: 16px;
+  height: 8px;
+  border-bottom: 3px solid var(--theme-dark);
+  border-radius: 0 0 999px 999px;
+}
+
+.help-character b {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--theme-dark);
+  background: #fff;
+  font-size: 12px;
+}
+
+.help-character b::before {
+  content: "?";
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -3160,6 +3385,40 @@ textarea {
     padding: 8px 12px;
   }
 
+  .help-guide {
+    right: 12px;
+    bottom: calc(var(--ad-banner-height) + 14px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .help-guide-panel {
+    width: calc(100vw - 24px);
+    max-height: min(560px, calc(100vh - var(--ad-banner-height) - 58px));
+    padding: 16px;
+  }
+
+  .help-guide-heading h2 {
+    font-size: 18px;
+  }
+
+  .help-topic-button {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .help-topic-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .help-guide-button {
+    min-height: 52px;
+    padding: 7px 12px 7px 7px;
+  }
+
+  .help-character {
+    width: 38px;
+    height: 38px;
+  }
+
   .ad-banner-inner {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -3250,6 +3509,7 @@ textarea {
   .sidebar,
   .topbar,
   .bottom-ad-banner,
+  .help-guide,
   .budget-layout > .form-panel,
   .budget-board-actions,
   .budget-list,
