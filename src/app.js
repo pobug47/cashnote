@@ -2928,6 +2928,11 @@ function percentLabel(value) {
   return `${value.toFixed(1)}%`;
 }
 
+function incomeRatioLabel(amount, income, fallback = "수입 입력 필요") {
+  if (!income) return fallback;
+  return `수입 대비 ${percentLabel((amount / income) * 100)}`;
+}
+
 function compareLabel(value) {
   if (value === 0) return "전월과 동일";
   return `전월 대비 ${value > 0 ? "+" : ""}${formatKrw(value)}`;
@@ -3154,6 +3159,7 @@ function renderDashboard() {
   const income = sum(monthTransactions, (item) => item.type === "income");
   const expense = sum(monthTransactions, (item) => item.type === "expense");
   const saving = sum(monthTransactions, (item) => item.type === "saving");
+  const available = income - expense - saving;
   const previousExpense = sum(previousTransactions, (item) => item.type === "expense");
   const delta = expense - previousExpense;
 
@@ -3161,7 +3167,11 @@ function renderDashboard() {
   document.querySelector("#incomeTotal").textContent = formatKrw(income);
   document.querySelector("#expenseTotal").textContent = formatKrw(expense);
   document.querySelector("#savingTotal").textContent = formatKrw(saving);
-  document.querySelector("#availableBalance").textContent = formatKrw(income - expense - saving);
+  document.querySelector("#availableBalance").textContent = formatKrw(available);
+  document.querySelector("#incomeRatio").textContent = income ? "수입 기준 100.0%" : "수입 입력 필요";
+  document.querySelector("#expenseRatio").textContent = incomeRatioLabel(expense, income);
+  document.querySelector("#savingRatio").textContent = incomeRatioLabel(saving, income);
+  document.querySelector("#availableRatio").textContent = incomeRatioLabel(available, income);
   document.querySelector("#monthDelta").textContent =
     delta === 0 ? "전월과 동일" : `전월 대비 ${delta > 0 ? "+" : ""}${formatKrw(delta)}`;
 
