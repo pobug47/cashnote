@@ -3511,6 +3511,33 @@ function budgetChartTitle() {
   return "지출 예산 설정 금액";
 }
 
+function budgetOverviewCopy(rows, budgetCount, totalBudget, totalUsed, remaining) {
+  if (budgetBoardTab === "income") {
+    return {
+      title: "월 수입 현황",
+      hint: "이번 달 수입을 항목별로 합산해 보여줍니다.",
+      count: `${rows.length}개`
+    };
+  }
+
+  if (budgetBoardTab === "calendar") {
+    return {
+      title: "날짜별 지출 현황",
+      hint: "이번 달 지출을 날짜별로 합산해 보여줍니다.",
+      count: `${rows.length}일`
+    };
+  }
+
+  return {
+    title: "월 예산 현황",
+    hint:
+      totalBudget > 0
+        ? `총 예산 ${formatKrw(totalBudget)} 중 ${formatKrw(totalUsed)} 사용, ${formatKrw(remaining)} 남았습니다.`
+        : "예산 항목을 추가하면 현재 월 지출과 비교해 보여줍니다.",
+    count: `${budgetCount}개`
+  };
+}
+
 function renderBudgetChart(rows) {
   const chart = document.querySelector("#budgetChart");
   const graphToggle = document.querySelector("#budgetGraphToggle");
@@ -3718,13 +3745,10 @@ function renderBudgets() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
-  document.querySelector("#budgetOverviewCount").textContent = `${budgets.length}개`;
-  document.querySelector("#budgetOverviewHint").textContent =
-    budgetBoardTab === "expense"
-      ? totalBudget > 0
-        ? `총 예산 ${formatKrw(totalBudget)} 중 ${formatKrw(totalUsed)} 사용, ${formatKrw(remaining)} 남았습니다.`
-        : "예산 항목을 추가하면 현재 월 지출과 비교해 보여줍니다."
-      : `${budgetChartTitle()}을 그래프로 보여줍니다.`;
+  const overviewCopy = budgetOverviewCopy(chartRows, budgets.length, totalBudget, totalUsed, remaining);
+  document.querySelector("#budgetOverviewTitle").textContent = overviewCopy.title;
+  document.querySelector("#budgetOverviewCount").textContent = overviewCopy.count;
+  document.querySelector("#budgetOverviewHint").textContent = overviewCopy.hint;
 
   renderBudgetChart(chartRows);
   list.innerHTML = budgets.length
