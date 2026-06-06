@@ -394,21 +394,19 @@ function normalizeBudgets(budgets) {
   source.forEach((item) => {
     const category = String(item?.category || "").trim();
     const amount = Math.max(0, Number(item?.amount) || 0);
-    const scope = item?.scope === "shared" ? "shared" : "personal";
-    const author = scope === "personal" ? String(item?.author || "").trim() : "";
-    const key = `${scope}:${author}:${category.toLowerCase()}`;
+    const key = category.toLowerCase();
     if (!category || seen.has(key)) return;
     seen.add(key);
     normalized.push({
       id: item?.id || crypto.randomUUID(),
       category,
       amount,
-      scope,
-      author
+      scope: "shared",
+      author: ""
     });
   });
 
-  return normalized.length ? normalized : defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item }));
+  return normalized.length ? normalized : defaultBudgets.map((item) => ({ id: crypto.randomUUID(), ...item, scope: "shared", author: "" }));
 }
 
 function normalizeSupportTickets(tickets) {
@@ -2703,14 +2701,11 @@ function syncAuthorMenu(selectedAuthor = null) {
 }
 
 function budgetOwnerName(budget) {
-  return budget.scope === "shared" ? "공동" : budget.author || currentAuthorName();
+  return budget.author || "";
 }
 
 function budgetScopeLabel(budget) {
-  if (!hasSharedLedger()) return "월 예산";
-  if (budget.scope === "shared") return "공동 예산";
-  const owner = String(budget.author || "").trim();
-  return owner ? `${owner} 개인 예산` : "개인 예산";
+  return "월 예산";
 }
 
 function applicableBudgetsForTransaction(type) {
@@ -3443,9 +3438,7 @@ function syncBudgetCategoryOptions() {
 function transactionMatchesBudget(item, budget) {
   if (item.type !== "expense") return false;
   if (item.budgetId) return item.budgetId === budget.id;
-  if (item.category !== budget.category) return false;
-  if (budget.scope === "shared") return true;
-  return authorName(item) === budgetOwnerName(budget);
+  return item.category === budget.category;
 }
 
 function budgetUsage(budget) {
@@ -3479,7 +3472,7 @@ function visibleBudgetRows() {
   if (budgetBoardTab === "calendar") return groupExpensesByDay(monthlyTransactions);
 
   return [...state.budgets]
-    .sort((a, b) => `${a.scope}:${budgetOwnerName(a)}:${a.category}`.localeCompare(`${b.scope}:${budgetOwnerName(b)}:${b.category}`, "ko"))
+    .sort((a, b) => koreanCollator.compare(a.category, b.category))
     .map((budget) => ({
       label: budget.category,
       amount: Number(budget.amount || 0),
@@ -3690,7 +3683,7 @@ function renderBudgets() {
 
   state.budgets = normalizeBudgets(state.budgets);
   syncBudgetCategoryOptions();
-  const budgets = [...state.budgets].sort((a, b) => `${a.scope}:${budgetOwnerName(a)}:${a.category}`.localeCompare(`${b.scope}:${budgetOwnerName(b)}:${b.category}`, "ko"));
+  const budgets = [...state.budgets].sort((a, b) => koreanCollator.compare(a.category, b.category));
   const chartRows = visibleBudgetRows();
   const totalBudget = sum(budgets, () => true);
   const totalUsed = budgets.reduce((total, budget) => total + budgetUsage(budget), 0);
@@ -3941,18 +3934,16 @@ function syncBudgetScopeControls(selectedAuthor = null) {
   const form = document.querySelector("#budgetForm");
   if (!form) return;
 
-  const hasMultipleAuthors = uniqueNames(state.householdMembers).length > 1;
   const scopeField = document.querySelector("#budgetScopeField");
   const authorField = document.querySelector("#budgetAuthorField");
   const scopeSelect = form.elements.scope;
   const authorSelect = form.elements.author;
-  const scope = hasMultipleAuthors ? scopeSelect.value || "personal" : "personal";
   const members = sortKoreanLabels(uniqueNames(state.householdMembers));
   const previousAuthor = selectedAuthor || authorSelect.value || currentAuthorName();
 
-  if (scopeField) scopeField.hidden = !hasMultipleAuthors;
-  if (authorField) authorField.hidden = !hasMultipleAuthors || scope !== "personal";
-  scopeSelect.value = scope;
+  if (scopeField) scopeField.hidden = true;
+  if (authorField) authorField.hidden = true;
+  scopeSelect.value = "shared";
   authorSelect.innerHTML = members.map((member) => `<option value="${escapeHtml(member)}">${escapeHtml(member)}</option>`).join("");
   authorSelect.value = members.includes(previousAuthor) ? previousAuthor : currentAuthorName();
 }
@@ -3963,7 +3954,7 @@ function resetBudgetForm() {
   editingBudgetId = null;
   form.reset();
   form.elements.budgetId.value = "";
-  if (form.elements.scope) form.elements.scope.value = "personal";
+  if (form.elements.scope) form.elements.scope.value = "shared";
   syncBudgetScopeControls(currentAuthorName());
   setFormStatus("#budgetStatus");
   setBudgetFormMode();
@@ -3975,7 +3966,7 @@ function startBudgetEdit(id) {
   if (!budget || !form) return;
   editingBudgetId = id;
   form.elements.budgetId.value = id;
-  form.elements.scope.value = budget.scope || "personal";
+  form.elements.scope.value = "shared";
   syncBudgetScopeControls(budget.author || currentAuthorName());
   form.elements.category.value = budget.category;
   form.elements.amount.value = budget.amount;
@@ -5558,8 +5549,8 @@ function initBudgetControls() {
     const id = String(form.get("budgetId") || editingBudgetId || "");
     const category = String(form.get("category") || "").trim();
     const amount = Math.max(0, Number(form.get("amount")) || 0);
-    const scope = hasSharedLedger() && form.get("scope") === "shared" ? "shared" : "personal";
-    const author = scope === "personal" ? String(form.get("author") || currentAuthorName()).trim() : "";
+    const scope = "shared";
+    const author = "";
 
     if (!category) {
       setFormStatus("#budgetStatus", "예산 항목 이름을 입력해 주세요.", "error");
@@ -5577,8 +5568,6 @@ function initBudgetControls() {
     const duplicate = state.budgets.find(
       (item) =>
         item.category === category &&
-        item.scope === scope &&
-        budgetOwnerName(item) === (scope === "shared" ? "공동" : author) &&
         item.id !== id
     );
     if (duplicate) {
