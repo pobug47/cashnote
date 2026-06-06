@@ -122,6 +122,7 @@ let supportRefreshPromise = null;
 let editingSupportTicketId = null;
 let activeNoticeModalIds = [];
 let budgetBoardTab = "expense";
+let selectedBudgetDetailId = null;
 let transactionDatePickerMonth = null;
 let selectedHelpTopicId = null;
 const verificationCountdowns = new Map();
@@ -3597,9 +3598,10 @@ function renderBudgetItem(budget) {
   const percent = budget.amount ? Math.min(100, (used / budget.amount) * 100) : 0;
   const exceeded = budget.amount > 0 && used > budget.amount;
   const status = exceeded ? `${formatKrw(used - budget.amount)} 초과` : `${formatKrw(remaining)} 남음`;
+  const selected = selectedBudgetDetailId === budget.id;
 
   return `
-    <article class="budget-card ${exceeded ? "over-budget" : ""}">
+    <article class="budget-card clickable-budget-card ${exceeded ? "over-budget" : ""} ${selected ? "selected" : ""}" role="button" tabindex="0" aria-pressed="${selected}" data-view-budget="${escapeHtml(budget.id)}">
       <div class="budget-card-main">
         <div>
           <strong>${escapeHtml(budget.category)}</strong>
@@ -3619,6 +3621,66 @@ function renderBudgetItem(budget) {
         <button class="danger-button mini-button" type="button" data-delete-budget="${budget.id}">삭제</button>
       </div>
     </article>
+  `;
+}
+
+function transactionsForBudget(budget) {
+  return byMonth(scopedTransactions(), state.selectedMonth)
+    .filter((item) => transactionMatchesBudget(item, budget))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+
+function renderBudgetDetail(budgets) {
+  const container = document.querySelector("#budgetDetailList");
+  if (!container) return;
+
+  if (budgetBoardTab !== "expense") {
+    selectedBudgetDetailId = null;
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+
+  const selectedBudget = budgets.find((budget) => budget.id === selectedBudgetDetailId);
+  if (!selectedBudget) {
+    selectedBudgetDetailId = null;
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+
+  const transactions = transactionsForBudget(selectedBudget);
+  const used = transactions.reduce((total, item) => total + Number(item.amount || 0), 0);
+  container.hidden = false;
+  container.innerHTML = `
+    <section class="budget-detail-panel">
+      <div class="budget-detail-header">
+        <div>
+          <h3>${escapeHtml(selectedBudget.category)} 사용 내역</h3>
+          <p>${escapeHtml(budgetScopeLabel(selectedBudget))} · ${monthLabelFormatter.format(monthDate(state.selectedMonth))}</p>
+        </div>
+        <span>${transactions.length}건 · ${formatKrw(used)}</span>
+      </div>
+      <div class="budget-detail-items">
+        ${
+          transactions.length
+            ? transactions
+                .map(
+                  (item) => `
+                    <article class="budget-detail-item">
+                      <div>
+                        <strong>${escapeHtml(item.memo || item.category)}</strong>
+                        <small>${escapeHtml([item.date, authorName(item), paymentLabel(item)].filter(Boolean).join(" · "))}</small>
+                      </div>
+                      <em>${formatKrw(item.amount)}</em>
+                    </article>
+                  `
+                )
+                .join("")
+            : `<div class="budget-detail-empty">이 예산 항목에 연결된 거래 내역이 없습니다.</div>`
+        }
+      </div>
+    </section>
   `;
 }
 
@@ -3651,6 +3713,7 @@ function renderBudgets() {
   list.innerHTML = budgets.length
     ? budgets.map(renderBudgetItem).join("")
     : `<div class="list-item"><span>아직 등록된 예산 항목이 없습니다.</span></div>`;
+  renderBudgetDetail(budgets);
 }
 
 function supportStatusLabel(status) {
@@ -3925,6 +3988,7 @@ function deleteBudget(id) {
   const budget = state.budgets.find((item) => item.id === id);
   if (!budget) return;
   state.budgets = state.budgets.filter((item) => item.id !== id);
+  if (selectedBudgetDetailId === id) selectedBudgetDetailId = null;
   if (editingBudgetId === id) resetBudgetForm();
   persist();
   renderBudgets();
@@ -5551,6 +5615,7 @@ function initBudgetControls() {
   document.querySelectorAll("[data-budget-board-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       budgetBoardTab = button.dataset.budgetBoardTab || "expense";
+      selectedBudgetDetailId = null;
       renderBudgets();
     });
   });
@@ -5569,7 +5634,23 @@ function initBudgetControls() {
     const deleteButton = event.target.closest("[data-delete-budget]");
     if (deleteButton) {
       deleteBudget(deleteButton.dataset.deleteBudget);
+      return;
     }
+
+    const budgetCard = event.target.closest("[data-view-budget]");
+    if (budgetCard) {
+      selectedBudgetDetailId = selectedBudgetDetailId === budgetCard.dataset.viewBudget ? null : budgetCard.dataset.viewBudget;
+      renderBudgets();
+    }
+  });
+
+  budgetList.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const budgetCard = event.target.closest("[data-view-budget]");
+    if (!budgetCard || event.target.closest("button")) return;
+    event.preventDefault();
+    selectedBudgetDetailId = selectedBudgetDetailId === budgetCard.dataset.viewBudget ? null : budgetCard.dataset.viewBudget;
+    renderBudgets();
   });
 
   setBudgetFormMode();

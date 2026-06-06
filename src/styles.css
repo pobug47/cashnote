@@ -1077,6 +1077,22 @@ h2 {
   background: #fbfcfb;
 }
 
+.clickable-budget-card {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.clickable-budget-card:hover,
+.clickable-budget-card:focus-visible,
+.budget-card.selected {
+  border-color: var(--green);
+  box-shadow: 0 10px 24px rgba(20, 85, 55, 0.12);
+}
+
+.budget-card.selected {
+  background: color-mix(in srgb, var(--green) 8%, #ffffff);
+}
+
 .budget-card.over-budget {
   border-color: #d78178;
   background: #fff7f6;
@@ -1136,6 +1152,76 @@ h2 {
 
 .budget-actions {
   justify-content: flex-end;
+}
+
+.budget-detail-list {
+  margin-top: 14px;
+}
+
+.budget-detail-panel {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.budget-detail-header,
+.budget-detail-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.budget-detail-header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.budget-detail-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.budget-detail-header p,
+.budget-detail-item small {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.budget-detail-header span,
+.budget-detail-item em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-weight: 900;
+  color: var(--green);
+}
+
+.budget-detail-items {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.budget-detail-item {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.budget-detail-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.budget-detail-empty {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .support-layout {
