@@ -143,6 +143,11 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2
 });
 
+const koreanCollator = new Intl.Collator("ko-KR", {
+  numeric: true,
+  sensitivity: "base"
+});
+
 const monthLabelFormatter = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "long"
@@ -816,7 +821,7 @@ function renderMemberSettings() {
   if (!list) return;
 
   ensureAuthorMembers();
-  const members = uniqueNames(state.householdMembers);
+  const members = sortKoreanLabels(uniqueNames(state.householdMembers));
   const defaultMember = defaultAuthorName();
   list.innerHTML = members
     .map(
@@ -2527,6 +2532,14 @@ function formatKrw(amount) {
   return formatter.format(amount);
 }
 
+function sortKoreanLabels(values = []) {
+  return [...values].sort((a, b) => koreanCollator.compare(String(a || ""), String(b || "")));
+}
+
+function uniqueSortedLabels(values = []) {
+  return sortKoreanLabels([...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))]);
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -2539,7 +2552,7 @@ function escapeHtml(value) {
 function categoriesForType(type) {
   const baseCategories = categoryMenu[type] || [];
   const savedCategories = state.transactions.filter((item) => item.type === type).map((item) => item.category);
-  return [...new Set([...baseCategories, ...savedCategories])].filter(Boolean);
+  return uniqueSortedLabels([...baseCategories, ...savedCategories]);
 }
 
 function syncCategoryMenu(selectedCategory = null) {
@@ -2588,7 +2601,7 @@ function syncPaymentMethodMenu(selectedMethod = null) {
 
   const paymentMethodSelect = transactionForm.elements.paymentMethod;
   const type = transactionForm.elements.type.value;
-  const methods = paymentMethodMenu[type] || [];
+  const methods = uniqueSortedLabels(paymentMethodMenu[type] || []);
   const previousMethod = selectedMethod || paymentMethodSelect.value;
   const nextMethod = methods.includes(previousMethod) ? previousMethod : methods[0] || "";
 
@@ -2604,7 +2617,7 @@ function paymentAccountsForMethod(method) {
     .filter((item) => item.paymentMethod === method && item.paymentAccount)
     .map((item) => item.paymentAccount);
 
-  return [...new Set([...baseAccounts, ...savedAccounts])].filter(Boolean);
+  return uniqueSortedLabels([...baseAccounts, ...savedAccounts]);
 }
 
 function syncPaymentAccountMenu(selectedAccount = null) {
@@ -2678,7 +2691,7 @@ function syncAuthorMenu(selectedAuthor = null) {
   ensureAuthorMembers();
   const authorField = document.querySelector("#authorField");
   const authorSelect = transactionForm.elements.author;
-  const members = uniqueNames(state.householdMembers);
+  const members = sortKoreanLabels(uniqueNames(state.householdMembers));
   const sessionAuthor = members.includes(currentAuthorName()) ? currentAuthorName() : members[0] || currentAuthorName();
 
   if (authorField) authorField.hidden = true;
@@ -2699,24 +2712,19 @@ function budgetScopeLabel(budget) {
   return owner ? `${owner} 개인 예산` : "개인 예산";
 }
 
-function applicableBudgetsForTransaction(type, category = "") {
+function applicableBudgetsForTransaction(type) {
   if (type !== "expense") return [];
   state.budgets = normalizeBudgets(state.budgets);
-  const normalizedCategory = String(category || "").trim().toLowerCase();
   const seen = new Set();
 
   return [...state.budgets]
-    .sort((a, b) => {
-      const aMatch = String(a.category || "").trim().toLowerCase() === normalizedCategory ? 0 : 1;
-      const bMatch = String(b.category || "").trim().toLowerCase() === normalizedCategory ? 0 : 1;
-      return aMatch - bMatch || String(a.category || "").localeCompare(String(b.category || ""), "ko");
-    })
     .filter((budget) => {
       const key = String(budget.category || "").trim().toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
+    })
+    .sort((a, b) => koreanCollator.compare(transactionBudgetOptionLabel(a), transactionBudgetOptionLabel(b)));
 }
 
 function budgetForTransaction(item = {}) {
@@ -2733,8 +2741,7 @@ function syncTransactionBudgetMenu(selectedBudgetId = null) {
   if (!transactionForm || !field || !transactionForm.elements.budgetId) return;
 
   const type = transactionForm.elements.type.value;
-  const category = resolveTransactionCategory(new FormData(transactionForm));
-  const budgets = applicableBudgetsForTransaction(type, category);
+  const budgets = applicableBudgetsForTransaction(type);
   field.hidden = type !== "expense";
   transactionForm.elements.budgetId.innerHTML = `
     <option value="">예산 선택 안 함</option>
@@ -3423,7 +3430,7 @@ function renderTransactions() {
 function expenseCategoriesForBudget() {
   const savedCategories = state.transactions.filter((item) => item.type === "expense").map((item) => item.category);
   const budgetCategories = (state.budgets || []).map((item) => item.category);
-  return [...new Set([...categoriesForType("expense"), ...budgetCategories, ...savedCategories])].filter(Boolean);
+  return uniqueSortedLabels([...categoriesForType("expense"), ...budgetCategories, ...savedCategories]);
 }
 
 function syncBudgetCategoryOptions() {
@@ -3877,7 +3884,7 @@ function syncBudgetScopeControls(selectedAuthor = null) {
   const scopeSelect = form.elements.scope;
   const authorSelect = form.elements.author;
   const scope = hasMultipleAuthors ? scopeSelect.value || "personal" : "personal";
-  const members = uniqueNames(state.householdMembers);
+  const members = sortKoreanLabels(uniqueNames(state.householdMembers));
   const previousAuthor = selectedAuthor || authorSelect.value || currentAuthorName();
 
   if (scopeField) scopeField.hidden = !hasMultipleAuthors;
