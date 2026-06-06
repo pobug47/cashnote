@@ -877,6 +877,30 @@ function applyInviteAuthorMapping(state, email, memberName) {
   };
 }
 
+function mergeBudgetState(existingState = {}, incomingState = {}) {
+  const merged = new Map();
+  const addBudget = (budget) => {
+    const category = String(budget?.category || "").trim();
+    if (!category) return;
+    const key = category.toLowerCase();
+    merged.set(key, {
+      ...budget,
+      id: budget?.id || createId("budget"),
+      category,
+      scope: "shared",
+      author: ""
+    });
+  };
+
+  (Array.isArray(existingState.budgets) ? existingState.budgets : []).forEach(addBudget);
+  (Array.isArray(incomingState.budgets) ? incomingState.budgets : []).forEach(addBudget);
+
+  return {
+    ...incomingState,
+    budgets: [...merged.values()]
+  };
+}
+
 function excelCell(value, options = {}) {
   const cell = { value: value ?? "" };
   if (options.bold) cell.fontWeight = "bold";
@@ -1348,7 +1372,9 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 403, { error: "가계부 저장 권한이 없습니다." });
         return;
       }
-      await saveLedgerState(db, session.ledgerId, { ...(body.state || {}), auth: { email: session.email } });
+      const existingState = (await getLedgerState(db, session.ledgerId)) || {};
+      const nextState = mergeBudgetState(existingState, body.state || {});
+      await saveLedgerState(db, session.ledgerId, { ...nextState, auth: { email: session.email } });
       sendJson(res, 200, { ok: true });
     } catch (error) {
       sendJson(res, 500, { error: "가계부 데이터를 저장하지 못했습니다.", detail: error.message });

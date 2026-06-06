@@ -110,6 +110,7 @@ let pendingGoal = null;
 let pendingGoalAction = "set";
 let persistTimer = null;
 let adInitialized = false;
+let ledgerRefreshPromise = null;
 let currentAccountIsAdmin = false;
 let editingNoticeId = null;
 let adminNotices = [];
@@ -316,6 +317,37 @@ function createInitialStateForUser(email) {
   return next;
 }
 
+function hydrateState(parsed = {}) {
+  const householdMembers = normalizeHouseholdMembers(parsed);
+  return {
+    selectedMonth: isMonthValue(parsed.selectedMonth) ? parsed.selectedMonth : sampleData.selectedMonth,
+    selectedTransactionId: parsed.selectedTransactionId || null,
+    selectedCategory: parsed.selectedCategory || "전체",
+    selectedTransactionType: isTransactionTypeFilter(parsed.selectedTransactionType) ? parsed.selectedTransactionType : "all",
+    selectedLedgerScope: isLedgerScope(parsed.selectedLedgerScope) ? parsed.selectedLedgerScope : "personal",
+    selectedCalendarDate: isDateValue(parsed.selectedCalendarDate) ? parsed.selectedCalendarDate : null,
+    transactionViewMode: parsed.transactionViewMode === "calendar" ? "calendar" : "list",
+    selectedSecurityId: parsed.selectedSecurityId || null,
+    selectedSecurityTab: parsed.selectedSecurityTab || "details",
+    profile: {
+      ...sampleData.profile,
+      ...(parsed.profile || {})
+    },
+    householdMembers,
+    authorByEmail: parsed.authorByEmail && typeof parsed.authorByEmail === "object" ? parsed.authorByEmail : {},
+    themeColor: isHexColor(parsed.themeColor) ? parsed.themeColor : sampleData.themeColor,
+    auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
+    monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
+    budgets: normalizeBudgets(parsed.budgets),
+    supportTickets: normalizeSupportTickets(parsed.supportTickets),
+    transactions: deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : structuredClone(sampleData.transactions)).map((item) => ({
+      ...item,
+      author: item.author || householdMembers[0] || defaultAuthorName(parsed.profile)
+    })),
+    securities: Array.isArray(parsed.securities) ? parsed.securities : structuredClone(sampleData.securities)
+  };
+}
+
 function initialServerStateForEmail(email) {
   const initial = hasStoredStateForEmail(email) ? loadState(email) : createInitialStateForUser(email);
   return {
@@ -336,35 +368,7 @@ function loadState(email = currentUserEmail) {
 
   try {
     const parsed = JSON.parse(saved);
-    const householdMembers = normalizeHouseholdMembers(parsed);
-    const loaded = {
-      selectedMonth: isMonthValue(parsed.selectedMonth) ? parsed.selectedMonth : sampleData.selectedMonth,
-      selectedTransactionId: parsed.selectedTransactionId || null,
-      selectedCategory: parsed.selectedCategory || "전체",
-      selectedTransactionType: isTransactionTypeFilter(parsed.selectedTransactionType) ? parsed.selectedTransactionType : "all",
-      selectedLedgerScope: isLedgerScope(parsed.selectedLedgerScope) ? parsed.selectedLedgerScope : "personal",
-      selectedCalendarDate: isDateValue(parsed.selectedCalendarDate) ? parsed.selectedCalendarDate : null,
-      transactionViewMode: parsed.transactionViewMode === "calendar" ? "calendar" : "list",
-      selectedSecurityId: parsed.selectedSecurityId || null,
-      selectedSecurityTab: parsed.selectedSecurityTab || "details",
-      profile: {
-        ...sampleData.profile,
-        ...(parsed.profile || {})
-      },
-      householdMembers,
-      authorByEmail: parsed.authorByEmail && typeof parsed.authorByEmail === "object" ? parsed.authorByEmail : {},
-      themeColor: isHexColor(parsed.themeColor) ? parsed.themeColor : sampleData.themeColor,
-      auth: parsed.auth?.email ? { email: parsed.auth.email } : parsed.auth?.phone ? { email: parsed.auth.phone } : null,
-      monthlyGoals: Array.isArray(parsed.monthlyGoals) ? parsed.monthlyGoals : [],
-      budgets: normalizeBudgets(parsed.budgets),
-      supportTickets: normalizeSupportTickets(parsed.supportTickets),
-      transactions: deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : structuredClone(sampleData.transactions)).map((item) => ({
-        ...item,
-        author: item.author || householdMembers[0] || defaultAuthorName(parsed.profile)
-      })),
-      securities: Array.isArray(parsed.securities) ? parsed.securities : structuredClone(sampleData.securities)
-    };
-    return loaded;
+    return hydrateState(parsed);
   } catch {
     return structuredClone(sampleData);
   }
@@ -619,7 +623,7 @@ function applyServerSession(result) {
   currentAccountIsAdmin = Boolean(result.account?.isAdmin);
   supportTickets = [];
   editingSupportTicketId = null;
-  state = result.state || state;
+  state = result.state ? hydrateState(result.state) : state;
   if (currentUserEmail) {
     state.auth = { email: currentUserEmail };
     state.authorByEmail = {
@@ -631,6 +635,26 @@ function applyServerSession(result) {
   if (currentLedgerId) sessionStorage.setItem(SESSION_LEDGER_KEY, currentLedgerId);
   if (currentSessionToken) sessionStorage.setItem(SESSION_TOKEN_KEY, currentSessionToken);
   if (currentLedgerId) localStorage.setItem(ledgerStorageKey(currentLedgerId), JSON.stringify(state));
+}
+
+async function refreshLedgerState({ renderAfter = false } = {}) {
+  if (!currentUserEmail || !currentLedgerId || !currentSessionToken) return;
+  if (ledgerRefreshPromise) return ledgerRefreshPromise;
+
+  const snapshot = navigationSnapshot();
+  ledgerRefreshPromise = apiRequest("/api/state")
+    .then((result) => {
+      applyServerSession(result);
+      restoreNavigationState(snapshot);
+      if (renderAfter) render();
+    })
+    .catch((error) => {
+      console.warn("Ledger refresh failed", error);
+    })
+    .finally(() => {
+      ledgerRefreshPromise = null;
+    });
+  return ledgerRefreshPromise;
 }
 
 function hexToRgb(hex) {
@@ -5202,6 +5226,7 @@ function setView(view, options = {}) {
     if (adminActiveTab === "notices") fetchAdminNotices();
   }
   if (view === "support") fetchSupportTickets({ force: true });
+  if (view === "budgets") refreshLedgerState({ renderAfter: true });
   if (options.updateHistory !== false) {
     writeNavigationHistory(view, { replace: options.replaceHistory || previousView === view });
   }
